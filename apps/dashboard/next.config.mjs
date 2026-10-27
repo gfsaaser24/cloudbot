@@ -1,20 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  async redirects() {
-    return [
-      {
-        source: "/de",
-        destination: "/de/admin/users",
-        permanent: true,
-      },
-      {
-        source: "/en",
-        destination: "/en/admin/users",
-        permanent: true,
-      },
-    ];
-  },
-  output: "standalone",
+  // Static export under /dashboard: served as Workers static assets by the API Worker (apps/api).
+  // The /dashboard/<lang> -> /dashboard/<lang>/admin/users redirect lives in apps/api/src/unified.ts.
+  output: "export",
+  basePath: "/dashboard",
+  images: { unoptimized: true },
   transpilePackages: ["@workspace/ui"],
 };
 

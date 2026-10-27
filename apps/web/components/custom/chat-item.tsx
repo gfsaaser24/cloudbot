@@ -57,7 +57,7 @@ const PureChatItem = ({
           href={
             chat.title.startsWith("Practice Session")
               ? `/${locale}/practice/${chat.id}`
-              : `/${locale}/chat/${chat.id}`
+              : `/${locale}/chat?id=${chat.id}`
           }
           onClick={() => setOpenMobile(false)}
         >

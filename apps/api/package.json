@@ -7,7 +7,8 @@
     "deploy": "wrangler deploy --minify",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "build-assets": "rm -rf public && cp -r ../web/out public && cp -r ../dashboard/out public/dashboard"
   },
   "dependencies": {
     "@hono/node-server": "1.19.9",
@@ -18,6 +19,7 @@
     "hono": "4.11.8"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "4.20260212.0",
     "@types/node": "24.10.1",
     "@vitest/coverage-v8": "4.0.18",
     "@workspace/eslint-config": "workspace:*",

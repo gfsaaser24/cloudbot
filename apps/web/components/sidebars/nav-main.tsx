@@ -70,7 +70,7 @@ export const NavMain = memo(() => {
       <SidebarMenuItem className="mt-4">
         <SidebarMenuButton
           asChild
-          isActive={pathname === `/${locale}` || pathname.includes("/chat/")}
+          isActive={pathname === `/${locale}` || pathname.endsWith("/chat")}
         >
           <Link href={`/${locale}`}>
             <Sparkles />

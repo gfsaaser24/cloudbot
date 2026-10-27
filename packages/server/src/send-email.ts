@@ -1,5 +1,4 @@
-import { Resend } from "resend";
-
+// Resend REST API instead of the resend SDK, which bundles ~1.8 MB of mail parsing code.
 export async function sendEmail({
   to,
   subject,
@@ -9,14 +8,25 @@ export async function sendEmail({
   subject: string;
   html: string;
 }) {
-  const resend = new Resend(process.env.RESEND_API_KEY!);
-
-  await resend.emails.send({
-    from: process.env.RESEND_SENDER_EMAIL!,
-    to,
-    subject,
-    html,
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: process.env.RESEND_SENDER_EMAIL,
+      to,
+      subject,
+      html,
+    }),
   });
+
+  if (!response.ok) {
+    throw new Error(
+      `Resend email failed: ${response.status} ${await response.text()}`,
+    );
+  }
 }
 
 export async function sendVerificationEmail({

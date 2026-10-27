@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useDashboardTranslations } from "@/contexts/dashboard-translations";
 import { signOut } from "@workspace/ui/lib/auth-client";
-import { GalleryVerticalEnd, LogOut, Settings, Users } from "lucide-react";
+import { GalleryVerticalEnd, LogOut, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
@@ -84,14 +84,6 @@ export function DashboardSidebar() {
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild tooltip={t.settings}>
-              <Link href="/admin/settings">
-                <Settings className="h-4 w-4" />
-                <span>{t.settings}</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild

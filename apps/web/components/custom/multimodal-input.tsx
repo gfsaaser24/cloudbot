@@ -199,7 +199,7 @@ const PureMultimodalInput = ({
   );
 
   const submitForm = useCallback(() => {
-    window.history.replaceState({}, "", `/${locale}/chat/${chatId}`);
+    window.history.replaceState({}, "", `/${locale}/chat?id=${chatId}`);
 
     sendMessage(
       {

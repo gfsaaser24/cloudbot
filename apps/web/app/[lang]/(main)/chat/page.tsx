@@ -8,24 +8,32 @@ import { type CustomUIMessage } from "@workspace/api-routes/types/custom-ui-mess
 import { useSharedTranslations } from "@workspace/ui/contexts/shared-translations-context";
 import { useUser } from "@workspace/ui/contexts/user-context";
 import { apiFetcher } from "@workspace/ui/lib/fetcher";
-import { useParams, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect } from "react";
 
+// Static export: the chat id comes from ?id= instead of a dynamic segment.
 export default function ChatRoute() {
+  return (
+    <Suspense fallback={<ChatSkeleton />}>
+      <ChatPage />
+    </Suspense>
+  );
+}
+
+function ChatPage() {
   const { locale, sharedT } = useSharedTranslations();
 
   const user = useUser();
 
   const router = useRouter();
-  const { id } = useParams();
-  const chatId = Array.isArray(id) ? id[0] : id;
+  const chatId = useSearchParams().get("id");
 
   const {
     data: messages,
     isPending,
     isError,
   } = useQuery({
-    queryKey: ["messages", id],
+    queryKey: ["messages", chatId],
     queryFn: () =>
       apiFetcher(
         (client) =>
@@ -34,7 +42,7 @@ export default function ChatRoute() {
           }),
         sharedT.apiCodes,
       ),
-    enabled: !!id && !!user && !!chatId,
+    enabled: !!user && !!chatId,
   });
 
   useEffect(() => {

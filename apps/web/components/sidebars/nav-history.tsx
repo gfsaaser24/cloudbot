@@ -24,7 +24,7 @@ import {
 import { KeyboardShortcut } from "@workspace/ui/shared-components/keyboard-shortcut";
 import { isToday, isYesterday, subMonths, subWeeks } from "date-fns";
 import { Loader2, MoreHorizontal } from "lucide-react";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { memo, useState } from "react";
 import { toast } from "sonner";
 import { ChatItem } from "../custom/chat-item";
@@ -44,7 +44,7 @@ export const NavHistory = memo(() => {
   const { webT } = useWebTranslations();
   const queryClient = useQueryClient();
 
-  const { id } = useParams();
+  const id = useSearchParams().get("id");
   const router = useRouter();
 
   const isMobile = useIsMobile();
@@ -199,7 +199,7 @@ export const NavHistory = memo(() => {
       success: (data) => {
         // Invalidate the chats cache to show the new forked chat
         queryClient.invalidateQueries({ queryKey: ["chats"] });
-        router.push(`/${locale}/chat/${data.id}`);
+        router.push(`/${locale}/chat?id=${data.id}`);
         return webT.navHistory.chatForked;
       },
       error: webT.navHistory.failedToForkChat,

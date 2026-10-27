@@ -69,7 +69,7 @@ export const ChatsList = memo(({ open, setOpen, inputValue }: Props) => {
 
   const handleItemClick = (item: ListItem) => {
     const chat = item as Chat;
-    router.push(`/${locale}/chat/${chat.id}`);
+    router.push(`/${locale}/chat?id=${chat.id}`);
     setOpen(false);
   };
 

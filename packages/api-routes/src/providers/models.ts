@@ -1,12 +1,4 @@
-export type Provider =
-  | "vercel-ai-gateway"
-  | "workers-ai"
-  | "anthropic"
-  | "azure"
-  | "amazon-bedrock"
-  | "google-vertex"
-  | "openai"
-  | "openrouter";
+export type Provider = "vercel-ai-gateway" | "workers-ai" | "openrouter";
 
 export interface ChatModel {
   id: number;
@@ -21,22 +13,22 @@ export interface ChatModel {
 
 const defaultChatModels: Omit<ChatModel, "id">[] = [
   {
-    name: "gpt-4o",
-    label: "GPT-4o",
-    provider: "openai",
-    description: "Powerful model with fast response times",
+    name: "google/gemini-3.8-flash",
+    label: "Gemini 3.8 Flash",
+    provider: "openrouter",
+    description: "Fast, low-cost model",
     images: true,
     pdfs: true,
     reasoning: false,
   },
   {
-    name: "gpt-5",
-    label: "GPT-5",
-    provider: "openai",
-    description: "Powerful model, but slow response times",
+    name: "anthropic/claude-sonnet-5.5",
+    label: "Claude Sonnet 5.5",
+    provider: "openrouter",
+    description: "Strong all-round model",
     images: true,
     pdfs: true,
-    reasoning: false,
+    reasoning: true,
   },
 ];
 

@@ -21,19 +21,41 @@ export type WebSource = {
   title: string;
 };
 
-type SearchProvider =
-  | "vercel-ai-perplexity"
-  | "vercel-ai-parallel"
-  | "anthropic"
-  | "azure"
-  | "google"
-  | "google-enterprise"
-  | "openai"
-  | "exalabs"
-  | "parallel"
-  | "tavily";
+type SearchProvider = "vercel-ai-perplexity" | "vercel-ai-parallel" | "tavily";
 
 const logger = createLogger("extract-from-web");
+
+// Tavily REST API instead of @tavily/ai-sdk, which bundles a ~5 MB tokenizer.
+async function tavilyRequest(path: "search" | "extract", body: object) {
+  const response = await fetch(`https://api.tavily.com/${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.TAVILY_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Tavily ${path} failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+const tavilyTools = () => ({
+  webSearch: tool({
+    description: "Search the web and return relevant results.",
+    inputSchema: z.object({ query: z.string() }),
+    execute: async ({ query }) =>
+      tavilyRequest("search", { query, max_results: 8 }),
+  }),
+  webExtract: tool({
+    description: "Extract the content of one or more web pages.",
+    inputSchema: z.object({ urls: z.array(z.string()) }),
+    execute: async ({ urls }) => tavilyRequest("extract", { urls }),
+  }),
+});
 
 export const extractFromWeb = ({ env, userLocation }: ExtractFromWebProps) =>
   tool({
@@ -82,109 +104,8 @@ export const extractFromWeb = ({ env, userLocation }: ExtractFromWebProps) =>
             break;
           }
 
-          case "anthropic": {
-            const { anthropic } = await import("@ai-sdk/anthropic");
-
-            tools = {
-              webFetch: anthropic.tools.webFetch_20250910(),
-              webSearch: anthropic.tools.webSearch_20250305({
-                userLocation: {
-                  type: "approximate",
-                  country: userLocation.country,
-                  region: userLocation.region,
-                  city: userLocation.city,
-                  timezone: userLocation.timezone,
-                },
-              }),
-            };
-
-            break;
-          }
-
-          case "azure": {
-            const { azure } = await import("@ai-sdk/azure");
-
-            tools = {
-              web_search_preview: azure.tools.webSearchPreview({
-                searchContextSize: "medium",
-                userLocation: {
-                  type: "approximate",
-                  city: userLocation.city,
-                  region: userLocation.region,
-                },
-              }),
-            };
-
-            break;
-          }
-
-          case "google": {
-            const { vertex } = await import("@ai-sdk/google-vertex/edge");
-
-            tools = {
-              google_search: vertex.tools.googleSearch({}),
-            };
-
-            break;
-          }
-
-          case "google-enterprise": {
-            const { vertex } = await import("@ai-sdk/google-vertex/edge");
-
-            tools = {
-              enterprise_web_search: vertex.tools.enterpriseWebSearch({}),
-            };
-
-            break;
-          }
-
-          case "openai": {
-            const { openai } = await import("@ai-sdk/openai");
-
-            tools = {
-              web_search: openai.tools.webSearch({
-                searchContextSize: "medium",
-                userLocation: {
-                  type: "approximate",
-                  city: userLocation.city,
-                  region: userLocation.region,
-                },
-              }),
-            };
-
-            break;
-          }
-
-          case "exalabs": {
-            const { webSearch: exaWebSearch } = await import("@exalabs/ai-sdk");
-
-            tools = {
-              webSearch: exaWebSearch(),
-            };
-
-            break;
-          }
-
-          case "parallel": {
-            const { searchTool, extractTool } =
-              await import("@parallel-web/ai-sdk-tools");
-
-            tools = {
-              webSearch: searchTool,
-              webExtract: extractTool,
-            };
-
-            break;
-          }
-
           case "tavily": {
-            const { tavilySearch, tavilyExtract } =
-              await import("@tavily/ai-sdk");
-
-            tools = {
-              webSearch: tavilySearch(),
-              webExtract: tavilyExtract(),
-            };
+            tools = tavilyTools();
 
             break;
           }

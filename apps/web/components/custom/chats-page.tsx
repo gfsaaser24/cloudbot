@@ -165,7 +165,7 @@ export const ChatsPage = memo(() => {
             {displayChats.map((chat) => (
               <Link
                 key={chat.id}
-                href={`/${locale}/chat/${chat.id}`}
+                href={`/${locale}/chat?id=${chat.id}`}
                 className="hover:bg-muted/30 group flex items-center gap-3 rounded-lg border p-3 transition-colors"
               >
                 <div className="flex size-9 shrink-0 items-center justify-center rounded-md border bg-blue-500/10 text-blue-600 dark:text-blue-400">

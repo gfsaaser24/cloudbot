@@ -4,7 +4,6 @@ import { roboto } from "@/lib/fonts";
 import { getDictionary as getSharedDictionary } from "@workspace/ui/lib/dictionary";
 import { type Locale, i18n } from "@workspace/ui/lib/i18n.config";
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 
 import "@workspace/ui/styles/globals.css";
 
@@ -66,7 +65,6 @@ export default async function RootLayout({
   const lang = (await params).lang as Locale;
   const dictionary = await getDictionary(lang);
   const sharedDictionary = await getSharedDictionary(lang);
-  const nonce = (await headers()).get("x-nonce") || "";
 
   return (
     <html lang={lang} suppressHydrationWarning>
@@ -78,7 +76,6 @@ export default async function RootLayout({
           attribute="class"
           defaultTheme="system"
           enableSystem
-          nonce={nonce}
         >
           {children}
         </Providers>

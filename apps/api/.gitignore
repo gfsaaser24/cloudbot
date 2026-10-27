@@ -36,3 +36,6 @@ lerna-debug.log*
 
 # misc
 .DS_Store
+
+# static assets assembled from apps/web and apps/dashboard
+public/
