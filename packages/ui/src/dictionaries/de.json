@@ -17,7 +17,11 @@
     "LOAD_MORE_ERROR": "Fehler beim Laden weiterer Elemente",
     "NO_RESULTS": "Keine Ergebnisse gefunden",
     "PAGE_NOT_FOUND": "Die Seite konnte nicht gefunden werden",
-    "PROMPT_LIMIT_REACHED": "Sie haben das Limit für benutzerdefinierte Prompts erreicht"
+    "PROMPT_LIMIT_REACHED": "Sie haben das Limit für benutzerdefinierte Prompts erreicht",
+    "INVITE_INVALID": "Diese Einladung ist ungültig, abgelaufen oder wurde bereits verwendet",
+    "INVITE_EMAIL_FAILED": "Die Einladung wurde gespeichert, aber die E-Mail konnte nicht gesendet werden. Bitte erneut einladen.",
+    "USER_ALREADY_EXISTS": "Ein Benutzer mit dieser E-Mail existiert bereits",
+    "NOT_FOUND": "Nicht gefunden"
   },
   "centralLoading": {
     "loading": "Lädt..."
@@ -93,7 +97,6 @@
     "emailLabel": "E-Mail",
     "error": "Fehler bei der Anmeldung",
     "forgotPassword": "Passwort vergessen?",
-    "noAccountText": "Noch kein Konto?",
     "orContinueWith": "Oder fortfahren mit",
     "orSignInWithSSO": "Oder mit SSO anmelden",
     "passwordLabel": "Passwort",
@@ -101,7 +104,6 @@
     "privacyPolicy": "Datenschutzbestimmungen",
     "redirecting": "Weiterleitung...",
     "signInButton": "Anmelden",
-    "signUpText": "Registrieren",
     "signingIn": "Anmeldung...",
     "success": "Erfolgreich angemeldet",
     "termsAnd": "und",
@@ -118,10 +120,12 @@
     "confirmPasswordLabel": "Passwort bestätigen",
     "confirmPasswordPlaceholder": "Passwort bestätigen",
     "error": "Fehler bei der Registrierung",
+    "inviteInvalid": "Dieser Einladungslink ist ungültig, abgelaufen oder wurde bereits verwendet. Bitten Sie einen Administrator um eine neue Einladung.",
+    "inviteOnly": "Die Registrierung ist nur mit Einladung möglich — bitten Sie einen Administrator um eine Einladung.",
     "signingUp": "Registrierung...",
     "signInText": "Anmelden",
     "signUpButton": "Registrieren",
-    "success": "Erfolgreich registriert. Bitte bestätigen Sie Ihre E-Mail.",
+    "success": "Konto erstellt. Sie können sich jetzt anmelden.",
     "title": "Registrieren"
   },
   "socialLogins": {

@@ -141,6 +141,29 @@ export const twoFactors = sqliteTable("two_factors", {
   backupCodes: text("backup_codes"),
 });
 
+// Sign-up is invite-only. Only a SHA-256 hash of the invite token is stored.
+export const invitations = sqliteTable(
+  "invitations",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    email: text("email").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    invitedBy: text("invited_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    acceptedAt: integer("accepted_at", { mode: "timestamp_ms" }),
+  },
+  (table) => [index("invitations_email_idx").on(table.email)],
+);
+
+export type Invitation = InferSelectModel<typeof invitations>;
+
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
   accounts: many(accounts),

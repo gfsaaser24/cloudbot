@@ -17,7 +17,11 @@
     "LOAD_MORE_ERROR": "Failed to load more items",
     "NO_RESULTS": "No results found",
     "PAGE_NOT_FOUND": "Page not found",
-    "PROMPT_LIMIT_REACHED": "You have reached the limit for custom prompts"
+    "PROMPT_LIMIT_REACHED": "You have reached the limit for custom prompts",
+    "INVITE_INVALID": "This invite is invalid, expired or has already been used",
+    "INVITE_EMAIL_FAILED": "The invite was saved, but the email could not be sent. Try inviting again.",
+    "USER_ALREADY_EXISTS": "A user with this email already exists",
+    "NOT_FOUND": "Not found"
   },
   "centralLoading": {
     "loading": "Loading..."
@@ -93,7 +97,6 @@
     "emailLabel": "Email",
     "error": "Failed to sign in",
     "forgotPassword": "Forgot your password?",
-    "noAccountText": "Don't have an account?",
     "orContinueWith": "Or continue with",
     "orSignInWithSSO": "Or sign in with SSO",
     "passwordLabel": "Password",
@@ -101,7 +104,6 @@
     "privacyPolicy": "Privacy Policy",
     "redirecting": "Redirecting...",
     "signInButton": "Sign in",
-    "signUpText": "Sign up",
     "signingIn": "Signing in...",
     "success": "Successfully signed in",
     "termsAnd": "and",
@@ -118,10 +120,12 @@
     "confirmPasswordLabel": "Confirm password",
     "confirmPasswordPlaceholder": "Confirm your password",
     "error": "Failed to sign up",
+    "inviteInvalid": "This invite link is invalid, expired or has already been used. Ask an admin for a new invite.",
+    "inviteOnly": "Sign-up is invite-only — ask an admin for an invite.",
     "signingUp": "Signing up...",
     "signInText": "Sign in",
     "signUpButton": "Sign up",
-    "success": "Successfully signed up. Please confirm your email.",
+    "success": "Account created. You can now sign in.",
     "title": "Sign up"
   },
   "socialLogins": {

@@ -23,6 +23,28 @@
         "showingUsers": "{count} von {total} Benutzern angezeigt",
         "failedToLoad": "Benutzer konnten nicht geladen werden"
     },
+    "invitesTable": {
+        "email": "E-Mail",
+        "emailPlaceholder": "E-Mail-Adresse zum Einladen",
+        "sendInvite": "Einladung senden",
+        "sending": "Wird gesendet...",
+        "sent": "Einladung an {email} gesendet",
+        "status": "Status",
+        "statuses": {
+            "pending": "Ausstehend",
+            "accepted": "Angenommen",
+            "expired": "Abgelaufen"
+        },
+        "invitedAt": "Eingeladen",
+        "expiresAt": "Läuft ab",
+        "actions": "Aktionen",
+        "revoke": "Widerrufen",
+        "revoked": "Einladung für {email} widerrufen",
+        "revokeTitle": "Einladung widerrufen: {email}",
+        "revokeDescription": "Der Einladungslink funktioniert dann nicht mehr. Sie können diese E-Mail später erneut einladen.",
+        "noInvites": "Noch keine Einladungen",
+        "failedToLoad": "Einladungen konnten nicht geladen werden"
+    },
     "userActions": {
         "openMenu": "Menü öffnen",
         "actions": "Aktionen",
@@ -104,6 +126,7 @@
     "dashboardSidebar": {
         "adminPanel": "Admin-Bereich",
         "users": "Benutzer",
+        "invites": "Einladungen",
         "settings": "Einstellungen",
         "logout": "Abmelden"
     },

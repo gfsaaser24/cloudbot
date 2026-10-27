@@ -1,8 +1,15 @@
 import { type QueryClient } from "@tanstack/react-query";
 import { type AdminApiType } from "@workspace/api-routes/routes/admin/index";
 import { type ProtectedApiType } from "@workspace/api-routes/routes/protected/index";
+import { type UnprotectedApiType } from "@workspace/api-routes/routes/unprotected/index";
 import { type ClientResponse, hc } from "hono/client";
 import { checkResponse, type ErrorDictionary } from "./translation-utils";
+
+function createPublicApiClient() {
+  return hc<UnprotectedApiType>(
+    `${process.env.NEXT_PUBLIC_API_URL}/api/public`,
+  );
+}
 
 function createProtectedApiClient() {
   return hc<ProtectedApiType>(
@@ -64,6 +71,21 @@ export async function adminApiFetcher<T>(
   errorDictionary: ErrorDictionary,
 ): Promise<T> {
   const client = createAdminApiClient();
+  const response = await clientCallback(client);
+  await checkResponse(response, errorDictionary);
+  return response.json() as Promise<T>;
+}
+
+/**
+ * Type-safe fetcher for public API endpoints (no session needed)
+ */
+export async function publicApiFetcher<T>(
+  clientCallback: (
+    client: ReturnType<typeof createPublicApiClient>,
+  ) => Promise<ClientResponse<T>>,
+  errorDictionary: ErrorDictionary,
+): Promise<T> {
+  const client = createPublicApiClient();
   const response = await clientCallback(client);
   await checkResponse(response, errorDictionary);
   return response.json() as Promise<T>;

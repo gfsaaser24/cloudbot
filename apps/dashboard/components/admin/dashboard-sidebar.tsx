@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useDashboardTranslations } from "@/contexts/dashboard-translations";
 import { signOut } from "@workspace/ui/lib/auth-client";
-import { GalleryVerticalEnd, LogOut, Users } from "lucide-react";
+import { GalleryVerticalEnd, LogOut, MailPlus, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
@@ -28,6 +28,11 @@ export function DashboardSidebar() {
       href: "/admin/users",
       icon: Users,
       label: t.users,
+    },
+    {
+      href: "/admin/invites",
+      icon: MailPlus,
+      label: t.invites,
     },
   ];
 

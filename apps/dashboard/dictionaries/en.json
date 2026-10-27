@@ -23,6 +23,28 @@
         "showingUsers": "Showing {count} of {total} users",
         "failedToLoad": "Failed to load users"
     },
+    "invitesTable": {
+        "email": "Email",
+        "emailPlaceholder": "Email address to invite",
+        "sendInvite": "Send invite",
+        "sending": "Sending...",
+        "sent": "Invite sent to {email}",
+        "status": "Status",
+        "statuses": {
+            "pending": "Pending",
+            "accepted": "Accepted",
+            "expired": "Expired"
+        },
+        "invitedAt": "Invited",
+        "expiresAt": "Expires",
+        "actions": "Actions",
+        "revoke": "Revoke",
+        "revoked": "Invite for {email} revoked",
+        "revokeTitle": "Revoke invite: {email}",
+        "revokeDescription": "The invite link will stop working. You can invite this email again later.",
+        "noInvites": "No invites yet",
+        "failedToLoad": "Failed to load invites"
+    },
     "userActions": {
         "openMenu": "Open menu",
         "actions": "Actions",
@@ -104,6 +126,7 @@
     "dashboardSidebar": {
         "adminPanel": "Admin Panel",
         "users": "Users",
+        "invites": "Invites",
         "settings": "Settings",
         "logout": "Logout"
     },
