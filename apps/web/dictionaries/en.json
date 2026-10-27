@@ -114,8 +114,8 @@
         "failedToRequestAccess": "Failed to request folder access"
     },
     "folderSelector": {
-        "foldersSelected": "{count} Ordner ausgewählt",
-        "searchFolders": "Ordner suchen"
+        "foldersSelected": "{count} folders selected",
+        "searchFolders": "Search folders"
     },
     "foldersPage": {
         "title": "Folders",
