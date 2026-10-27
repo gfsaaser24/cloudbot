@@ -204,6 +204,7 @@ SEARCH_PROVIDER allowed values: `vercel-ai-perplexity`, `vercel-ai-parallel`, `a
 | `AZURE_API_KEY`                | Required if Azure used                | API key for Azure model endpoint.                        | Azure portal -> Keys and Endpoint for your resource.                        |
 | `GOOGLE_PRIVATE_KEY`           | Required if Vertex used               | Service account private key value for Google auth.       | Download/create service account key JSON and copy private key value.        |
 | `OPENAI_API_KEY`               | Required if OpenAI used               | OpenAI API key for model calls.                          | OpenAI dashboard -> API keys.                                               |
+| `OPENROUTER_API_KEY`           | Required if OpenRouter used           | OpenRouter API key for model calls.                      | OpenRouter dashboard -> Keys.                                               |
 | `EXA_API_KEY`                  | Required if Exa search used           | API key for Exa search provider.                         | Exa dashboard -> API keys.                                                  |
 | `PARALLEL_API_KEY`             | Required if Parallel search used      | API key for Parallel search provider.                    | Parallel provider dashboard -> API keys.                                    |
 | `TAVILY_API_KEY`               | Required if Tavily search used        | API key for Tavily search provider.                      | Tavily dashboard -> API keys.                                               |

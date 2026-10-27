@@ -5,7 +5,8 @@ export type Provider =
   | "azure"
   | "amazon-bedrock"
   | "google-vertex"
-  | "openai";
+  | "openai"
+  | "openrouter";
 
 export interface ChatModel {
   id: number;

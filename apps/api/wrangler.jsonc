@@ -39,7 +39,7 @@
                 {
                     "binding": "CLOUDBOT_DB",
                     "database_name": "cloudbot-db",
-                    "database_id": "04238e3c-ef9b-4e0d-9377-0207340aa72e",
+                    "database_id": "e925f00b-9d42-46b0-89fc-e69a969f43cb",
                     "migrations_dir": "./../../packages/server/src/drizzle/migrations"
                 }
             ],
@@ -51,12 +51,19 @@
     },
     "route": {
         "custom_domain": true,
-        "zone_name": "nextgpt.cloud",
-        "pattern": "api.nextgpt.cloud"
+        "zone_name": "editmypodcast.agency",
+        "pattern": "api.cloudchat.editmypodcast.agency"
     },
+    "workers_dev": false,
     "observability": {
+        "enabled": true,
         "logs": {
-            "enabled": true
+            "enabled": true,
+            "head_sampling_rate": 1
+        },
+        "traces": {
+            "enabled": true,
+            "head_sampling_rate": 0.01
         }
     }
 }

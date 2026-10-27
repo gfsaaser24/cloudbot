@@ -159,6 +159,21 @@ export const getModel = async (
       };
     }
 
+    case "openrouter": {
+      const { openrouter } = await import("@openrouter/ai-sdk-provider");
+
+      return {
+        model: openrouter(chatModel.name),
+        providerOptions: {
+          openrouter: {
+            ...(reasoningEnabled
+              ? { reasoning: { enabled: true, max_tokens: 1024 } }
+              : {}),
+          },
+        },
+      };
+    }
+
     default:
       throw new HTTPException(400, { message: "INVALID_MODEL" });
   }
