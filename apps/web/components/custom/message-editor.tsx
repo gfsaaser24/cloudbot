@@ -90,7 +90,7 @@ const PureMessageEditor = ({
       await regenerate({
         messageId: message.id,
         body: {
-          modelIdx: selectedChatModel.id,
+          model: selectedChatModel.id,
           isTemporary: isTemporary,
           reasoning: selectedChatModel.reasoning && reasoningEnabled,
           webSearch: webSearchEnabled,

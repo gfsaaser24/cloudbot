@@ -8,12 +8,27 @@ export interface Config {
   providerOptions: { [model: string]: Record<string, JSONValue> };
 }
 
+export interface ModelOptions {
+  reasoning?: boolean;
+  // Lets OpenRouter attribute usage to the CloudChat user.
+  userId?: string;
+  // Use OpenRouter's web search plugin (results come back as URL sources).
+  webSearch?: boolean;
+}
+
+// `model` is either an index into the configured models (used for titles,
+// artifacts, search and completion) or an OpenRouter model id picked in the
+// chat model menu.
 export const getModel = async (
   env: Bindings,
-  modelIdx: number,
-  reasoningEnabled?: boolean,
+  model: number | string,
+  options: ModelOptions = {},
 ): Promise<Config> => {
-  const chatModel = chatModels[modelIdx];
+  if (typeof model === "string") {
+    return openRouterModel(model, options);
+  }
+
+  const chatModel = chatModels[model];
 
   if (!chatModel) {
     throw new HTTPException(400, { message: "INVALID_MODEL" });
@@ -45,21 +60,45 @@ export const getModel = async (
     }
 
     case "openrouter": {
-      const { openrouter } = await import("@openrouter/ai-sdk-provider");
-
-      return {
-        model: openrouter(chatModel.name),
-        providerOptions: {
-          openrouter: {
-            ...(reasoningEnabled
-              ? { reasoning: { enabled: true, max_tokens: 1024 } }
-              : {}),
-          },
-        },
-      };
+      return openRouterModel(chatModel.name, options);
     }
 
     default:
       throw new HTTPException(400, { message: "INVALID_MODEL" });
   }
 };
+
+async function openRouterModel(
+  modelId: string,
+  { reasoning, userId, webSearch }: ModelOptions,
+): Promise<Config> {
+  const { createOpenRouter } = await import("@openrouter/ai-sdk-provider");
+
+  const openrouter = createOpenRouter({
+    compatibility: "strict",
+    // App attribution on the openrouter.ai dashboard.
+    appName: "CloudChat",
+    appUrl: process.env.BETTER_AUTH_URL,
+  });
+
+  return {
+    model: openrouter.chat(modelId, {
+      // Token counts and cost for every response.
+      usage: { include: true },
+      user: userId,
+      ...(reasoning ? { reasoning: { effort: "medium" } } : {}),
+      // Automatic prompt caching; only Anthropic models honor this.
+      ...(modelId.startsWith("anthropic/")
+        ? { cache_control: { type: "ephemeral" } }
+        : {}),
+      plugins: [
+        // Lets every model read PDFs, not just ones with native file input.
+        { id: "file-parser", pdf: { engine: "pdf-text" } },
+        ...(webSearch ? [{ id: "web" as const, max_results: 8 }] : []),
+      ],
+      // Compress the middle of very long conversations instead of failing.
+      extraBody: { transforms: ["middle-out"] },
+    }),
+    providerOptions: {},
+  };
+}

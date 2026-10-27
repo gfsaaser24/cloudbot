@@ -25,7 +25,7 @@ export class ChatRequest {
   public readonly messages: CustomUIMessage[];
   public readonly lastMessage: CustomUIMessage;
   public readonly createNewChat: boolean;
-  public readonly modelIdx: number;
+  public readonly model: string; // OpenRouter model id
   public readonly isTemporary: boolean; // Whether to save the chat or not
   public readonly reasoningEnabled?: boolean;
   public readonly webSearchEnabled?: boolean;
@@ -36,7 +36,7 @@ export class ChatRequest {
     user: User,
     messages: CustomUIMessage[],
     createNewChat: boolean,
-    modelIdx: number,
+    model: string,
     isTemporary: boolean,
     userLocation: UserLocation,
     reasoningEnabled?: boolean,
@@ -47,7 +47,7 @@ export class ChatRequest {
     this.messages = messages;
     this.lastMessage = messages[messages.length - 1];
     this.createNewChat = createNewChat;
-    this.modelIdx = modelIdx;
+    this.model = model;
     this.isTemporary = isTemporary;
     this.userLocation = userLocation;
     this.reasoningEnabled = reasoningEnabled;
@@ -85,7 +85,7 @@ export class ChatRequest {
       id,
       messages: incomingMessages,
       messageCount,
-      modelIdx,
+      model,
       temporary: isTemporary,
       reasoning: reasoningEnabled,
       webSearch: webSearchEnabled,
@@ -167,7 +167,7 @@ export class ChatRequest {
       user,
       validatedUIMessages,
       createNewChat,
-      modelIdx,
+      model,
       isTemporary,
       userLocation,
       reasoningEnabled,

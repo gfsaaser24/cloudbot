@@ -1,5 +1,4 @@
 import * as z from "zod";
-import { chatModels } from "../../providers/models.js";
 
 const basePayloadSchema = z
   .object({
@@ -7,11 +6,11 @@ const basePayloadSchema = z
       message: "Chat ID must be a valid UUID",
     }),
     messages: z.array(z.any()).min(1), // This will be validated with the ai.validateUIMessages function later
-    modelIdx: z
-      .number()
-      .int()
-      .min(0)
-      .max(chatModels.length - 1),
+    // OpenRouter model id from the model menu, e.g. "anthropic/claude-sonnet-5.5".
+    model: z
+      .string()
+      .max(200)
+      .regex(/^[\w.-]+\/[\w.:-]+$/),
     temporary: z.boolean(),
     reasoning: z.boolean().optional(),
     webSearch: z.boolean().optional(),

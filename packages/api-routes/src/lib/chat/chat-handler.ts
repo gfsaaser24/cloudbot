@@ -209,7 +209,10 @@ export abstract class ChatHandler {
   }: {
     systemPrompt: string;
   }): Promise<StreamTextInput> {
-    const config = await getModel(this.env, this.request.modelIdx);
+    const config = await getModel(this.env, this.request.model, {
+      reasoning: this.request.reasoningEnabled,
+      userId: this.request.user.id,
+    });
     let modelMessages = await convertToModelMessages(this.request.messages);
 
     return {

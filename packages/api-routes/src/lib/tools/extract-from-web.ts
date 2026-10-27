@@ -21,7 +21,11 @@ export type WebSource = {
   title: string;
 };
 
-type SearchProvider = "vercel-ai-perplexity" | "vercel-ai-parallel" | "tavily";
+type SearchProvider =
+  | "openrouter"
+  | "vercel-ai-perplexity"
+  | "vercel-ai-parallel"
+  | "tavily";
 
 const logger = createLogger("extract-from-web");
 
@@ -111,7 +115,10 @@ export const extractFromWeb = ({ env, userLocation }: ExtractFromWebProps) =>
           }
         }
 
-        const config = await getModel(env, searchModelIdx);
+        // "openrouter" needs no tools: the model searches through OpenRouter's web plugin.
+        const config = await getModel(env, searchModelIdx, {
+          webSearch: provider === "openrouter",
+        });
         const result = await generateText({
           system: webSearchPrompt,
           prompt:

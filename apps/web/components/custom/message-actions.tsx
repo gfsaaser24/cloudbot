@@ -182,7 +182,7 @@ export const MessageActions = memo(
                     await regenerate({
                       messageId,
                       body: {
-                        modelIdx: selectedChatModel.id,
+                        model: selectedChatModel.id,
                         temporary: isTemporary,
                         reasoning:
                           selectedChatModel.reasoning && reasoningEnabled,

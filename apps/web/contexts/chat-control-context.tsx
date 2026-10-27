@@ -5,17 +5,36 @@ import React, {
   createContext,
   type ReactNode,
   useContext,
+  useEffect,
   useState,
 } from "react";
 
-interface ChatModel {
-  id: number;
-  name: string;
+// A model from the OpenRouter catalog (GET /api/protected/models).
+export interface ChatModel {
+  id: string; // OpenRouter model id
   label: string;
   description: string;
   images: boolean;
   pdfs: boolean;
   reasoning: boolean;
+  contextLength?: number;
+}
+
+const STORAGE_KEY = "cloudchat:model";
+
+function defaultChatModel(): ChatModel {
+  const model = chatModels[0];
+  if (!model) {
+    throw new Error("No default chat models found.");
+  }
+  return {
+    id: model.name,
+    label: model.label,
+    description: model.description,
+    images: model.images,
+    pdfs: model.pdfs,
+    reasoning: model.reasoning,
+  };
 }
 
 interface ChatControlContextType {
@@ -38,12 +57,24 @@ interface Props {
 }
 
 export function ChatControlProvider({ children }: Props) {
-  const [selectedChatModel, setSelectedChatModel] = useState<ChatModel>(() => {
-    if (!chatModels[0]) {
-      throw new Error("No default chat models found.");
+  const [selectedChatModel, setSelectedChatModel] =
+    useState<ChatModel>(defaultChatModel);
+
+  // Restore the last picked model (localStorage is only available in the browser).
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        setSelectedChatModel(JSON.parse(saved) as ChatModel);
+      } catch {
+        localStorage.removeItem(STORAGE_KEY);
+      }
     }
-    return chatModels[0];
-  });
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(selectedChatModel));
+  }, [selectedChatModel]);
   const [isTemporary, setIsTemporary] = useState(false);
   const [reasoningEnabled, setReasoningEnabled] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);

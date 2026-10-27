@@ -33,6 +33,7 @@ import foldersRequestAccessRoute from "./folders/request-access/route.js";
 import foldersRoute from "./folders/route.js";
 import foldersValidateAccessRoute from "./folders/validate-access/route.js";
 import messagesRoute from "./messages/[chatId]/route.js";
+import modelsRoute from "./models/route.js";
 import deleteMessagePairRoute from "./messages/delete-pair/[messageId]/route.js";
 import trailingMessagesRoute from "./messages/delete-trailing/[messageId]/route.js";
 import profilesRoute from "./profiles/route.js";
@@ -103,6 +104,9 @@ const protectedApiRouter = new Hono()
   .route("/messages/delete-pair/:messageId", deleteMessagePairRoute)
   .route("/messages/delete-trailing/:messageId", trailingMessagesRoute)
   .route("/messages/:chatId", messagesRoute)
+
+  // Models
+  .route("/models", modelsRoute)
 
   // Profiles
   .route("/profiles", profilesRoute)

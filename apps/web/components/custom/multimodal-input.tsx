@@ -216,7 +216,7 @@ const PureMultimodalInput = ({
       },
       {
         body: {
-          modelIdx: selectedChatModel.id,
+          model: selectedChatModel.id,
           temporary: isTemporary,
           reasoning: selectedChatModel.reasoning && reasoningEnabled,
           webSearch: webSearchEnabled,
