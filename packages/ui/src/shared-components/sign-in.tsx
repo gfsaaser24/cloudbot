@@ -162,18 +162,6 @@ export const SignIn = memo(() => {
             </form>
           </Form>
         )}
-
-        {enableEmailSignup && (
-          <div className="text-center text-sm">
-            {sharedT.signIn.noAccountText}{" "}
-            <Link
-              className="underline underline-offset-4"
-              href={`/${locale}/sign-up`}
-            >
-              {sharedT.signIn.signUpText}
-            </Link>
-          </div>
-        )}
       </div>
       <div className="text-muted-foreground hover:[&_a]:text-primary text-balance text-center text-xs [&_a]:underline [&_a]:underline-offset-4">
         {sharedT.signIn.termsPrefix}{" "}

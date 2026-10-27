@@ -1,9 +1,14 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { createAuthMiddleware } from "better-auth/api";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { admin, lastLoginMethod, twoFactor } from "better-auth/plugins";
 import { HTTPException } from "hono/http-exception";
 import { db } from "./drizzle/db.js";
+import {
+  findPendingInvite,
+  INVITE_TOKEN_HEADER,
+  markInviteAccepted,
+} from "./invitations.js";
 import { sendPasswordResetEmail, sendVerificationEmail } from "./send-email.js";
 
 // console.log("Initializing auth server with the following configuration:");
@@ -59,6 +64,10 @@ function buildAuth() {
       sendOnSignUp: true,
       autoSignInAfterVerification: true,
       sendVerificationEmail: async ({ user, url, token }, request) => {
+        // Invited sign-ups are created already verified (see databaseHooks), so they don't need this email.
+        if (user.emailVerified) {
+          return;
+        }
         await sendVerificationEmail({
           to: user.email,
           url,
@@ -109,7 +118,43 @@ function buildAuth() {
             });
           }
         }
+
+        // Sign-up is invite-only. The sign-up form sends the token from the invite link in this header.
+        const inviteToken = ctx.headers?.get(INVITE_TOKEN_HEADER);
+        const email = ctx.body?.email;
+        const invite = inviteToken
+          ? await findPendingInvite(inviteToken)
+          : null;
+        if (
+          !invite ||
+          typeof email !== "string" ||
+          invite.email !== email.toLowerCase()
+        ) {
+          throw new APIError("FORBIDDEN", {
+            message:
+              "Sign-up is invite-only. This invite is invalid, expired, already used or for a different email. Ask an admin for a new invite.",
+          });
+        }
       }),
+    },
+    databaseHooks: {
+      user: {
+        create: {
+          // A /sign-up/email request only gets this far once the before hook has accepted its invite.
+          // The invite link proved the inbox, so the account starts out verified.
+          before: async (user, ctx) => {
+            if (ctx?.path === "/sign-up/email") {
+              return { data: { ...user, emailVerified: true } };
+            }
+          },
+          after: async (user, ctx) => {
+            const inviteToken = ctx?.headers?.get(INVITE_TOKEN_HEADER);
+            if (ctx?.path === "/sign-up/email" && inviteToken) {
+              await markInviteAccepted(inviteToken);
+            }
+          },
+        },
+      },
     },
     rateLimit: {
       window: 300,
