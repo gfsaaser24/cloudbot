@@ -12,7 +12,7 @@
   "route": {
     "custom_domain": true,
     "zone_name": "editmypodcast.agency",
-    "pattern": "admin.cloudchat.editmypodcast.agency"
+    "pattern": "cloudchat-admin.editmypodcast.agency"
   },
   "workers_dev": false,
   "observability": {

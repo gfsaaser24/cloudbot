@@ -85,7 +85,6 @@ jobs:
           command: deploy --minify
           secrets: |
             NODE_ENV
-            BASE_DOMAIN
             BETTER_AUTH_URL
             ADMIN_USER_IDS
             ALLOWED_ORIGINS
