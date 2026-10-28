@@ -17,12 +17,17 @@ import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { validator } from "hono/validator";
-import { allowedMediaTypes } from "./schema.js";
+import { fileTypeOf } from "@workspace/api-routes/lib/file-types.js";
 
 const logger = createLogger("get-signed-url");
 
 const paramSchema = z.object({ folderId: uuidSchema }).strict();
-const signedUrlSchema = createSignedUrlSchema(allowedMediaTypes);
+const signedUrlSchema = createSignedUrlSchema([
+  "text",
+  "pdf",
+  "image",
+  "document",
+]);
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>().post(
   "/",
@@ -49,7 +54,9 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>().post(
   }),
   async (c) => {
     const { folderId } = c.req.valid("param");
-    const { filename, fileSize, fileType } = c.req.valid("json");
+    const { filename, fileSize } = c.req.valid("json");
+    // The schema only accepts known extensions, so this is never null.
+    const contentType = fileTypeOf(filename)!.mimeType;
     const user = c.get("user");
 
     // Fetch the folder to check permissions and get visibility
@@ -102,7 +109,7 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>().post(
         name: filename,
         owner: user.id,
         size: fileSize,
-        format: fileType,
+        format: contentType,
         visibility: folder.visibility,
         uploadConfirmed: false,
       });
@@ -120,7 +127,7 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>().post(
       const { url: signedUrl } = await StorageClient.getSignedUrlForUpload({
         bucket: process.env.R2_BUCKET_NAME!,
         key,
-        contentType: fileType,
+        contentType,
         contentLength: fileSize,
       });
 
@@ -130,6 +137,7 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>().post(
         signedUrl,
         key,
         fileId,
+        contentType,
       });
     } catch (error) {
       // Rollback: delete the file entry if signed URL generation fails

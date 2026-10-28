@@ -1,3 +1,4 @@
+import { type MarkdownDocument } from "@cloudflare/workers-types";
 import { type Chat } from "@workspace/server/drizzle/schema.js";
 import { createLogger } from "@workspace/server/logger/logger.js";
 import {
@@ -9,6 +10,7 @@ import {
   type Tool,
   type UIMessageStreamWriter,
 } from "ai";
+import { fileTypeOf } from "../file-types.js";
 import { generateTitleFromUserMessage } from "../../providers/generate-title.js";
 import { titleModelIdx } from "../../providers/models.js";
 import { getModel } from "../../providers/providers.js";
@@ -22,6 +24,15 @@ import { saveMessages } from "../queries/messages.js";
 import { type ChatRequest } from "./chat-request.js";
 
 const logger = createLogger("chat-handler");
+
+// Keeps one inlined attachment from filling the model's context (~50K tokens).
+const MAX_ATTACHMENT_CHARS = 200_000;
+
+function truncateForContext(text: string): string {
+  return text.length > MAX_ATTACHMENT_CHARS
+    ? `${text.slice(0, MAX_ATTACHMENT_CHARS)}\n\n[Truncated: the file is longer than ${MAX_ATTACHMENT_CHARS} characters.]`
+    : text;
+}
 
 type StreamTextInput = Parameters<typeof streamText>[0];
 
@@ -137,6 +148,22 @@ export abstract class ChatHandler {
    * Download attachments from R2 and add them as file parts to the last user message.
    * Also retrieves context filter documents and adds them as text parts.
    */
+  // Office documents, HTML, SVG and BMP: converted with Workers AI (free for most formats).
+  protected async convertToMarkdown(
+    name: string,
+    blob: MarkdownDocument["blob"],
+  ): Promise<string> {
+    const result = await this.env.AI.toMarkdown({ name, blob });
+    if (result.format === "error") {
+      logger.warn("Could not convert attachment to Markdown", {
+        name,
+        error: result.error,
+      });
+      return "(This file could not be read.)";
+    }
+    return result.data;
+  }
+
   protected async integrateContextIntoMessages(): Promise<void> {
     const lastMessage = this.request.lastMessage;
     if (lastMessage.role !== "user") return;
@@ -146,8 +173,20 @@ export abstract class ChatHandler {
 
     // Process file attachments from R2
     if (attachments.length > 0) {
+      // Attachments are uploaded under this prefix (see attachments/get-signed-url);
+      // never read keys outside it, which could belong to other users.
+      const ownPrefix = `attachments/${this.request.user.id}/`;
+
       for (const attachment of attachments) {
         try {
+          const type = fileTypeOf(attachment.filename);
+          if (!attachment.filename.startsWith(ownPrefix) || !type) {
+            logger.warn("Rejected attachment outside the user's prefix", {
+              filename: attachment.filename,
+            });
+            continue;
+          }
+
           const file = await this.env.CLOUDBOT_BUCKET.get(attachment.filename);
 
           if (!file) {
@@ -157,19 +196,31 @@ export abstract class ChatHandler {
             continue;
           }
 
-          const fileContent = await file.arrayBuffer();
-          const base64Data = Buffer.from(fileContent).toString("base64");
-          const dataUrl = `data:${attachment.mediaType};base64,${base64Data}`;
+          const name = attachment.filename.slice(ownPrefix.length);
 
-          lastMessage.parts.push({
-            type: "file",
-            url: dataUrl,
-            mediaType: attachment.mediaType,
-          } as any);
+          if (type.kind === "image" || type.kind === "pdf") {
+            const base64Data = Buffer.from(await file.arrayBuffer()).toString(
+              "base64",
+            );
+            lastMessage.parts.push({
+              type: "file",
+              url: `data:${type.mimeType};base64,${base64Data}`,
+              mediaType: type.mimeType,
+            } as any);
+          } else {
+            const text =
+              type.kind === "text"
+                ? await file.text()
+                : await this.convertToMarkdown(name, await file.blob());
+            lastMessage.parts.push({
+              type: "text",
+              text: `\n\n[Attached file: "${name}"]\n\n${truncateForContext(text)}`,
+            } as any);
+          }
 
           logger.debug("Attached file to message", {
             filename: attachment.filename,
-            mediaType: attachment.mediaType,
+            kind: type.kind,
           });
         } catch (error) {
           logger.warn("Failed to download attachment", {

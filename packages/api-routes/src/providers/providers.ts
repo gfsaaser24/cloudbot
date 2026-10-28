@@ -93,7 +93,8 @@ async function openRouterModel(
         : {}),
       plugins: [
         // Lets every model read PDFs, not just ones with native file input.
-        { id: "file-parser", pdf: { engine: "pdf-text" } },
+        // "cloudflare-ai" converts with Workers AI at no cost ("pdf-text" is deprecated).
+        { id: "file-parser", pdf: { engine: "cloudflare-ai" } },
         ...(webSearch ? [{ id: "web" as const, max_results: 8 }] : []),
       ],
       // Compress the middle of very long conversations instead of failing.

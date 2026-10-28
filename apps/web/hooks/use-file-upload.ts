@@ -16,10 +16,7 @@ export const useFileUpload = () => {
           json: {
             filename: file.name,
             fileSize: file.size,
-            fileType: file.type as
-              | "application/pdf"
-              | "image/jpeg"
-              | "image/png",
+            fileType: file.type,
           },
         }),
       sharedT.apiCodes,
@@ -28,11 +25,12 @@ export const useFileUpload = () => {
 
   const uploadFile = async (file: File) => {
     try {
-      const { signedUrl, key } = await getSignedUrl(file);
-      const renamedFile = new File([file], key, { type: file.type });
+      const { signedUrl, key, contentType } = await getSignedUrl(file);
+      const renamedFile = new File([file], key, { type: contentType });
 
+      // The signed URL is bound to the type the server derived from the extension.
       const uploadHeaders: Record<string, string> = {
-        "Content-Type": file.type,
+        "Content-Type": contentType,
       };
 
       const uploadResponse = await fetch(signedUrl, {
@@ -48,11 +46,7 @@ export const useFileUpload = () => {
 
       return {
         filename: key,
-        mediaType: file.type as
-          | "application/pdf"
-          | "image/jpeg"
-          | "image/png"
-          | "image/jpg",
+        mediaType: contentType,
         previewUrl,
       };
     } catch (error) {

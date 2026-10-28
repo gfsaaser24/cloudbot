@@ -5,9 +5,14 @@ import { type Variables } from "@workspace/api-routes/types/variables.js";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { validator } from "hono/validator";
-import { allowedMediaTypes } from "./schema.js";
+import { fileTypeOf } from "@workspace/api-routes/lib/file-types.js";
 
-const signedUrlSchema = createSignedUrlSchema(allowedMediaTypes);
+const signedUrlSchema = createSignedUrlSchema([
+  "text",
+  "pdf",
+  "image",
+  "document",
+]);
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>().post(
   "/",
@@ -26,23 +31,24 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>().post(
     return parsed.data;
   }),
   async (c) => {
-    const { filename, fileSize, fileType } = c.req.valid("json");
+    const { filename, fileSize } = c.req.valid("json");
+    // The schema only accepts known extensions, so this is never null.
+    const contentType = fileTypeOf(filename)!.mimeType;
     const user = c.get("user");
 
     const key = `attachments/${user.id}/${filename}`;
 
-    console.log("Generating signed URL with key:", key, "fileType:", fileType);
-
     const { url: signedUrl } = await StorageClient.getSignedUrlForUpload({
       bucket: process.env.R2_BUCKET_NAME!,
       key,
-      contentType: fileType,
+      contentType,
       contentLength: fileSize,
     });
 
     return c.json({
       signedUrl,
       key,
+      contentType,
     });
   },
 );

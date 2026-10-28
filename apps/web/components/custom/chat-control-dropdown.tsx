@@ -2,6 +2,7 @@
 
 import { useChatControl } from "@/contexts/chat-control-context";
 import { useWebTranslations } from "@/contexts/web-translations";
+import { acceptAttribute } from "@workspace/api-routes/lib/file-types";
 import { Button } from "@workspace/ui/components/button";
 import {
   DropdownMenu,
@@ -43,16 +44,14 @@ const PureChatControlsDropdown = ({
   const [open, setOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const getAcceptedFileTypes = () => {
-    const types = [];
-    if (selectedChatModel.images) {
-      types.push(".jpeg", ".jpg", ".png");
-    }
-    if (selectedChatModel.pdfs) {
-      types.push(".pdf");
-    }
-    return types.join(",");
-  };
+  // Text, code, PDFs and office documents work with every model (the server
+  // inlines or converts them); images only with vision models.
+  const getAcceptedFileTypes = () =>
+    acceptAttribute(
+      selectedChatModel.images
+        ? ["text", "pdf", "document", "image"]
+        : ["text", "pdf", "document"],
+    );
 
   const handleScreenshot = async () => {
     setOpen(false);

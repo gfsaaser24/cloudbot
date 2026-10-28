@@ -1,7 +1,7 @@
 import * as z from "zod";
 
 import { StorageClient } from "@workspace/api-routes/lib/storage-client.js";
-import { createFilenameWithExtensionSchema } from "@workspace/api-routes/schemas/filename-schema.js";
+import { filenameWithExtensionSchema } from "@workspace/api-routes/schemas/filename-schema.js";
 import { uuidSchema } from "@workspace/api-routes/schemas/uuid-schema.js";
 import { type Bindings } from "@workspace/api-routes/types/bindings.js";
 import { type Variables } from "@workspace/api-routes/types/variables.js";
@@ -11,16 +11,11 @@ import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { validator } from "hono/validator";
-import { allowedMediaTypes } from "../schema.js";
-
-const allowedExtensions = new Set(
-  allowedMediaTypes.map((type) => type.split("/").pop()),
-);
 
 const paramSchema = z
   .object({
     folderId: uuidSchema,
-    filename: createFilenameWithExtensionSchema(allowedExtensions),
+    filename: filenameWithExtensionSchema,
   })
   .strict();
 

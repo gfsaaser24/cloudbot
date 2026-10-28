@@ -23,7 +23,7 @@ export function useFolderDropzone({ folderId }: Props) {
     }));
 
     try {
-      const { signedUrl, fileId } = await apiFetcher(
+      const { signedUrl, fileId, contentType } = await apiFetcher(
         (client) =>
           client.files["get-signed-url"][":folderId"].$post({
             param: { folderId },
@@ -64,7 +64,8 @@ export function useFolderDropzone({ folderId }: Props) {
         };
 
         xhr.open("PUT", signedUrl);
-        xhr.setRequestHeader("Content-Type", file.type);
+        // The signed URL is bound to the type the server derived from the extension.
+        xhr.setRequestHeader("Content-Type", contentType);
         xhr.send(file);
       });
 
