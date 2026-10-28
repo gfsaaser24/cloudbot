@@ -5,8 +5,8 @@ import { pageNumberSchema } from "@workspace/api-routes/schemas/page-number-sche
 import { type Bindings } from "@workspace/api-routes/types/bindings.js";
 import { type Variables } from "@workspace/api-routes/types/variables.js";
 import { db } from "@workspace/server/drizzle/db.js";
-import { chats } from "@workspace/server/drizzle/schema.js";
-import { desc, eq } from "drizzle-orm";
+import { chats, folders } from "@workspace/server/drizzle/schema.js";
+import { desc, eq, getTableColumns } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { validator } from "hono/validator";
@@ -32,8 +32,9 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>().get(
     const user = c.get("user");
 
     const userChats = await db()
-      .select()
+      .select({ ...getTableColumns(chats), folderName: folders.name })
       .from(chats)
+      .leftJoin(folders, eq(chats.folderId, folders.id))
       .where(eq(chats.userId, user.id))
       .orderBy(desc(chats.createdAt))
       .limit(itemsPerPage)

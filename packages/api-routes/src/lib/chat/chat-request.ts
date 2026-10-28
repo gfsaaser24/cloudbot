@@ -9,6 +9,7 @@ import { dataSchemas } from "../../schemas/data-schemas.js";
 import { metadataSchema } from "../../schemas/metadata-schema.js";
 import { type CustomUIMessage } from "../../types/custom-ui-message.js";
 import { type UserLocation } from "../../types/user-location.js";
+import { getReadableFolder } from "../folder-access.js";
 import { getChatById } from "../queries/chats.js";
 import { getMessagesByChatId } from "../queries/messages.js";
 import { mockedTools } from "../tools/index.js";
@@ -30,6 +31,9 @@ export class ChatRequest {
   public readonly reasoningEnabled?: boolean;
   public readonly webSearchEnabled?: boolean;
   public readonly userLocation: UserLocation;
+  // The chat's project folder: the stored one, or the requested one for a new chat.
+  // Access is checked again before it is used as context.
+  public readonly folderId?: string;
 
   constructor(
     id: string,
@@ -41,6 +45,7 @@ export class ChatRequest {
     userLocation: UserLocation,
     reasoningEnabled?: boolean,
     webSearchEnabled?: boolean,
+    folderId?: string,
   ) {
     this.id = id;
     this.user = user;
@@ -52,6 +57,7 @@ export class ChatRequest {
     this.userLocation = userLocation;
     this.reasoningEnabled = reasoningEnabled;
     this.webSearchEnabled = webSearchEnabled;
+    this.folderId = folderId;
 
     logger.debug("ChatRequest constructed", {
       chatId: id,
@@ -61,6 +67,7 @@ export class ChatRequest {
       reasoningEnabled,
       webSearchEnabled,
       userLocation,
+      folderId,
     });
   }
 
@@ -89,6 +96,7 @@ export class ChatRequest {
       temporary: isTemporary,
       reasoning: reasoningEnabled,
       webSearch: webSearchEnabled,
+      folderId: requestedFolderId,
     } = validatedPayload;
 
     // Extract user location from Cloudflare's request.cf properties.
@@ -105,6 +113,7 @@ export class ChatRequest {
     };
 
     let createNewChat = false;
+    let folderId: string | undefined;
     let prevMessages: CustomUIMessage[] = [];
 
     // Check chat ownership and load messages for non-temporary chats
@@ -119,6 +128,22 @@ export class ChatRequest {
           userId: user.id,
         });
         throw new HTTPException(403, { message: "FORBIDDEN" });
+      } else {
+        folderId = chat.folderId ?? undefined;
+      }
+
+      // A requested folder only applies to a new chat, and the user must be able to read it
+      if (createNewChat && requestedFolderId) {
+        const folder = await getReadableFolder(requestedFolderId, user.id);
+        if (!folder) {
+          logger.warn("User cannot read the requested chat folder", {
+            chatId: id,
+            userId: user.id,
+            folderId: requestedFolderId,
+          });
+          throw new HTTPException(403, { message: "FORBIDDEN" });
+        }
+        folderId = folder.id;
       }
 
       // Load previous messages
@@ -172,6 +197,7 @@ export class ChatRequest {
       userLocation,
       reasoningEnabled,
       webSearchEnabled,
+      folderId,
     );
   }
 }

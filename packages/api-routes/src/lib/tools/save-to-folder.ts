@@ -12,7 +12,12 @@ import { canWriteToFolder, folderObjectKey } from "../folder-access.js";
 const logger = createLogger("save-to-folder");
 
 export const saveToFolderInput = z.object({
-  folder: z.string().describe("The folder's name (or id) to save into"),
+  folder: z
+    .string()
+    .optional()
+    .describe(
+      "The folder's name (or id) to save into. Leave it out to save into the chat's project folder.",
+    ),
   filename: z
     .string()
     .describe("A short descriptive name; it is saved as a .md file"),
@@ -40,6 +45,7 @@ export const saveToFolderOutput = z.object({
 type SaveToFolderProps = {
   env: Bindings;
   userId: string;
+  defaultFolderId?: string; // The chat's project folder, used when no folder is given
 };
 
 // Same character rules as uploads (schemas/filename-schema.ts), 64 chars max.
@@ -62,25 +68,43 @@ async function writableFolders(userId: string) {
   return writable;
 }
 
-export const saveToFolder = ({ env, userId }: SaveToFolderProps) =>
+export const saveToFolder = ({
+  env,
+  userId,
+  defaultFolderId,
+}: SaveToFolderProps) =>
   tool({
     description:
-      "Saves Markdown into one of the user's folders so it can be searched later. Use it when the user asks to save, store or keep something (a YouTube transcript, an article, notes). Pass url to fetch and save a page or video in full; pass content to save text you wrote.",
+      "Saves Markdown into one of the user's folders so it can be searched later. Use it when the user asks to save, store or keep something (a YouTube transcript, an article, notes). Pass url to fetch and save a page or video in full; pass content to save text you wrote. Leave out folder to save into the chat's project folder.",
     inputSchema: saveToFolderInput,
     outputSchema: saveToFolderOutput,
     execute: async ({ folder: folderRef, filename, url, content }) => {
       try {
         const writable = await writableFolders(userId);
-        const folder = writable.find(
-          (f) =>
-            f.id === folderRef ||
-            f.name.toLowerCase() === folderRef.trim().toLowerCase(),
-        );
+
+        if (!folderRef && !defaultFolderId) {
+          return {
+            saved: false,
+            message:
+              "No folder given and this chat has no project folder. Ask the user which folder to use.",
+            availableFolders: writable.map((f) => f.name),
+          };
+        }
+
+        const folder = folderRef
+          ? writable.find(
+              (f) =>
+                f.id === folderRef ||
+                f.name.toLowerCase() === folderRef.trim().toLowerCase(),
+            )
+          : writable.find((f) => f.id === defaultFolderId);
 
         if (!folder) {
           return {
             saved: false,
-            message: `No folder named "${folderRef}" that you can save to. Ask the user which folder to use.`,
+            message: folderRef
+              ? `No folder named "${folderRef}" that you can save to. Ask the user which folder to use.`
+              : "You can't save to this chat's project folder. Ask the user which folder to use.",
             availableFolders: writable.map((f) => f.name),
           };
         }

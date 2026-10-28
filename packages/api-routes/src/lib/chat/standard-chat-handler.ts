@@ -32,11 +32,18 @@ import { generateFile } from "../tools/generate-file.js";
 import { updateDocument } from "../tools/update-document.js";
 import { ChatHandler } from "./chat-handler.js";
 import { type ChatRequest } from "./chat-request.js";
+import {
+  buildProjectPrompt,
+  loadProject,
+  type Project,
+  withProjectFolder,
+} from "./project-context.js";
 
 const logger = createLogger("standard-chat-handler");
 
 export class StandardChatHandler extends ChatHandler {
   private systemPrompt = standardSystemPrompt;
+  private project?: Project; // Loaded at the start of executeChat
 
   constructor(env: Bindings, request: ChatRequest) {
     super(env, request);
@@ -44,6 +51,16 @@ export class StandardChatHandler extends ChatHandler {
 
   private async buildSystemPrompt(): Promise<string> {
     let finalPrompt = await this.buildBaseSystemPrompt(this.systemPrompt);
+
+    if (this.project) {
+      const effectiveFilter = this.getEffectiveContextFilter();
+      const searchesProject =
+        !effectiveFilter?.files.length &&
+        !!effectiveFilter?.folders.some(
+          (f) => f.id === this.project?.folder.id,
+        );
+      finalPrompt += buildProjectPrompt(this.project, searchesProject);
+    }
 
     // Append context filter prompts to the system prompt
     const contextFilter = this.getContextFilter();
@@ -68,10 +85,15 @@ export class StandardChatHandler extends ChatHandler {
     return finalPrompt;
   }
 
+  // The message's context filter, falling back to the chat's project folder
+  private getEffectiveContextFilter() {
+    return withProjectFolder(this.getContextFilter(), this.project?.folder.id);
+  }
+
   protected async retrieveToolSet(
     writer: UIMessageStreamWriter<CustomUIMessage>,
   ): Promise<Record<string, Tool>> {
-    const contextFilter = this.getContextFilter();
+    const contextFilter = this.getEffectiveContextFilter();
 
     const tools: Record<string, Tool> = {
       createDocument: createDocument({
@@ -92,6 +114,7 @@ export class StandardChatHandler extends ChatHandler {
       saveToFolder: saveToFolder({
         env: this.env,
         userId: this.request.user.id,
+        defaultFolderId: this.project?.folder.id,
       }),
       // Needs FIRECRAWL_API_KEY (pages and YouTube transcripts).
       ...(isFirecrawlConfigured() ? { fetchWebContent: fetchWebContent() } : {}),
@@ -129,7 +152,7 @@ export class StandardChatHandler extends ChatHandler {
           },
         );
 
-        const authorizedFileMetadata = await filterAuthorizedFiles(
+        authorizedFileMetadata = await filterAuthorizedFiles(
           requestedFiles,
           this.request.user.id,
         );
@@ -158,7 +181,7 @@ export class StandardChatHandler extends ChatHandler {
           .from(folders)
           .where(inArray(folders.id, folderIds));
 
-        const authorizedFolderMetadata = await filterAuthorizedFolders(
+        authorizedFolderMetadata = await filterAuthorizedFolders(
           requestedFolders,
           this.request.user.id,
         );
@@ -206,6 +229,12 @@ export class StandardChatHandler extends ChatHandler {
   protected async executeChat(
     writer: UIMessageStreamWriter<CustomUIMessage>,
   ): Promise<void> {
+    // Access is checked on every request; a folder the user lost access to is skipped
+    this.project = await loadProject(
+      this.request.folderId,
+      this.request.user.id,
+    );
+
     // Integrate attachments and context filter documents into the messages
     await this.integrateContextIntoMessages();
 

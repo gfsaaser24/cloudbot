@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import artifactsGetSignedUrlRoute from "./artifacts/get-signed-url/[fileId]/[extension]/route.js";
 import attachmentsGetSignedUrlRoute from "./attachments/get-signed-url/route.js";
 import chatRoute from "./chat/route.js";
+import chatsFolderRoute from "./chats/[chatId]/folder/route.js";
 import chatsByIdRoute from "./chats/[chatId]/route.js";
 import chatsFavourites from "./chats/favourites/route.js";
 import chatsForkRoute from "./chats/fork/[chatId]/route.js";
@@ -27,6 +28,7 @@ import filesGetSignedUrlFolderRoute from "./files/get-signed-url/[folderId]/rout
 import filesIlike from "./files/ilike/route.js";
 import filesRoute from "./files/route.js";
 import filterRoute from "./filter/[chatId]/route.js";
+import foldersChatsRoute from "./folders/[folderId]/chats/route.js";
 import foldersDeleteRoute from "./folders/[folderId]/route.js";
 import foldersIlike from "./folders/ilike/route.js";
 import foldersRequestAccessRoute from "./folders/request-access/route.js";
@@ -64,6 +66,7 @@ const protectedApiRouter = new Hono()
   .route("/chats/ilike", chatsIlike)
   .route("/chats/is-favourite/:chatId", chatsIsFavouriteRoute)
   .route("/chats/title/:chatId", chatsTitleRoute)
+  .route("/chats/:chatId/folder", chatsFolderRoute)
   .route("/chats/:chatId", chatsByIdRoute)
 
   // Completion
@@ -98,6 +101,7 @@ const protectedApiRouter = new Hono()
   .route("/folders/ilike", foldersIlike)
   .route("/folders/request-access", foldersRequestAccessRoute)
   .route("/folders/validate-access", foldersValidateAccessRoute)
+  .route("/folders/:folderId/chats", foldersChatsRoute)
   .route("/folders/:folderId", foldersDeleteRoute)
 
   // Messages

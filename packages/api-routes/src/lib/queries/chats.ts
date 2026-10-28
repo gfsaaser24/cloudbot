@@ -7,6 +7,7 @@ export async function getChatById({ id }: { id: string }) {
     .select({
       userId: chats.userId,
       title: chats.title,
+      folderId: chats.folderId,
     })
     .from(chats)
     .where(eq(chats.id, id))
@@ -52,10 +53,12 @@ export async function saveChat({
   id,
   userId,
   title,
+  folderId,
 }: {
   id: string;
   userId: string;
   title: string;
+  folderId?: string;
 }) {
   const result = await db()
     .insert(chats)
@@ -63,6 +66,7 @@ export async function saveChat({
       id,
       userId,
       title,
+      folderId,
     })
     .returning();
 

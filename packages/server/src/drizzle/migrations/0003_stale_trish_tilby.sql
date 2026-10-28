@@ -1,0 +1,1 @@
+ALTER TABLE `chats` ADD `folder_id` text REFERENCES folders(id) ON DELETE set null;

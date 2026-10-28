@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { uuidSchema } from "../../schemas/uuid-schema.js";
 
 const basePayloadSchema = z
   .object({
@@ -15,6 +16,8 @@ const basePayloadSchema = z
     reasoning: z.boolean().optional(),
     webSearch: z.boolean().optional(),
     trigger: z.string().max(128).optional(),
+    // Project folder for a new chat. Ignored for existing chats (the stored folder wins).
+    folderId: uuidSchema.optional(),
   })
   .refine(
     (data) => {

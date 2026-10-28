@@ -99,6 +99,7 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>().post(
         userId: user.id,
         title: `${chat.title} (Fork)`,
         isFavourite: false,
+        folderId: chat.folderId, // Access is re-checked on every chat request
       })
       .returning();
 

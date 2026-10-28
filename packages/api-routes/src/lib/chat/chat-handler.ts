@@ -70,6 +70,7 @@ export abstract class ChatHandler {
       id: this.request.id,
       userId: this.request.user.id,
       title,
+      folderId: this.request.folderId,
     });
 
     return createdChat;

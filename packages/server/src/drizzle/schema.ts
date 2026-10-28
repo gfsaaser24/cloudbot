@@ -199,6 +199,10 @@ export const chats = sqliteTable("chats", {
   createdAt: integer("created_at", { mode: "timestamp_ms" })
     .notNull()
     .default(sql`(unixepoch() * 1000)`),
+  // The folder ("project") this chat works in. Cleared when the folder is deleted.
+  folderId: text("folder_id").references(() => folders.id, {
+    onDelete: "set null",
+  }),
 });
 
 export type Chat = InferSelectModel<typeof chats>;
