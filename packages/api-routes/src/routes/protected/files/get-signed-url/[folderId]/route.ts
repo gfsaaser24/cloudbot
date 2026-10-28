@@ -7,17 +7,17 @@ import { type Bindings } from "@workspace/api-routes/types/bindings.js";
 import { type Variables } from "@workspace/api-routes/types/variables.js";
 import { generateUUID } from "@workspace/api-routes/utils/generate-uuid.js";
 import { db } from "@workspace/server/drizzle/db.js";
-import {
-  files,
-  folders,
-  folderUsers,
-} from "@workspace/server/drizzle/schema.js";
+import { files, folders } from "@workspace/server/drizzle/schema.js";
 import { createLogger } from "@workspace/server/logger/logger.js";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { validator } from "hono/validator";
 import { fileTypeOf } from "@workspace/api-routes/lib/file-types.js";
+import {
+  canWriteToFolder,
+  folderObjectKey,
+} from "@workspace/api-routes/lib/folder-access.js";
 
 const logger = createLogger("get-signed-url");
 
@@ -71,30 +71,7 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>().post(
       throw new HTTPException(404, { message: "NOT_FOUND" });
     }
 
-    // Check permissions based on folder visibility
-    let hasAccess = false;
-
-    if (folder.visibility === "public") {
-      // Public folders allow anyone to upload
-      hasAccess = true;
-    } else if (folder.visibility === "protected") {
-      // Protected folders require user to be in folderUsers or be the owner
-      const access = await db()
-        .select()
-        .from(folderUsers)
-        .where(
-          and(
-            eq(folderUsers.folderId, folderId),
-            eq(folderUsers.userId, user.id),
-          ),
-        )
-        .limit(1);
-
-      hasAccess = access.length > 0;
-    } else if (folder.visibility === "private") {
-      // Private folders require user to be the owner
-      hasAccess = folder.owner === user.id;
-    }
+    const hasAccess = await canWriteToFolder(folder, user.id);
 
     if (!hasAccess) {
       throw new HTTPException(403, { message: "FORBIDDEN" });
@@ -119,10 +96,7 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>().post(
 
     try {
       // Generate signed URL for upload
-      const key =
-        folder.visibility === "private"
-          ? `${user.id}/${folderId}/${filename}`
-          : `${folder.visibility}/${folderId}/${filename}`;
+      const key = folderObjectKey(folder, user.id, filename);
 
       const { url: signedUrl } = await StorageClient.getSignedUrlForUpload({
         bucket: process.env.R2_BUCKET_NAME!,

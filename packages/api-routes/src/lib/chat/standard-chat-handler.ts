@@ -25,6 +25,9 @@ import { getPromptsByIds } from "../queries/prompts.js";
 import { createDocument } from "../tools/create-document.js";
 import { extractFromDocuments } from "../tools/extract-from-documents.js";
 import { extractFromWeb } from "../tools/extract-from-web.js";
+import { fetchWebContent } from "../tools/fetch-web-content.js";
+import { saveToFolder } from "../tools/save-to-folder.js";
+import { isFirecrawlConfigured } from "../firecrawl.js";
 import { generateFile } from "../tools/generate-file.js";
 import { updateDocument } from "../tools/update-document.js";
 import { ChatHandler } from "./chat-handler.js";
@@ -86,6 +89,12 @@ export class StandardChatHandler extends ChatHandler {
         userId: this.request.user.id,
         dataStream: writer,
       }),
+      saveToFolder: saveToFolder({
+        env: this.env,
+        userId: this.request.user.id,
+      }),
+      // Needs FIRECRAWL_API_KEY (pages and YouTube transcripts).
+      ...(isFirecrawlConfigured() ? { fetchWebContent: fetchWebContent() } : {}),
     };
 
     // Only include extractFromDocuments if context filter has files or folders

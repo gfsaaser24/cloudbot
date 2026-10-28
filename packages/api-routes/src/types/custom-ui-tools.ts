@@ -1,5 +1,11 @@
 import { type DocumentSource } from "../lib/tools/extract-from-documents.js";
 import { type WebSource } from "../lib/tools/extract-from-web.js";
+import { type fetchWebContentOutput } from "../lib/tools/fetch-web-content.js";
+import {
+  type saveToFolderInput,
+  type saveToFolderOutput,
+} from "../lib/tools/save-to-folder.js";
+import type * as z from "zod";
 import { type ArtifactKind } from "../schemas/artifact-schema.js";
 
 export type CustomUITools = {
@@ -35,5 +41,13 @@ export type CustomUITools = {
       size: number;
       message: string;
     };
+  };
+  fetchWebContent: {
+    input: { url: string };
+    output: z.infer<typeof fetchWebContentOutput>;
+  };
+  saveToFolder: {
+    input: z.infer<typeof saveToFolderInput>;
+    output: z.infer<typeof saveToFolderOutput>;
   };
 };

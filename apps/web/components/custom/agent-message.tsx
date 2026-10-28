@@ -14,7 +14,9 @@ import {
   ToolCreateDocument,
   ToolExtractFromDocuments,
   ToolExtractFromWeb,
+  ToolFetchWebContent,
   ToolGenerateFile,
+  ToolSaveToFolder,
   ToolUpdateDocument,
 } from "../tools";
 import { Markdown } from "./markdown";
@@ -159,6 +161,12 @@ export const AgentMessage = ({
 
                   case "tool-generateFile":
                     return <ToolGenerateFile key={index} part={part} />;
+
+                  case "tool-fetchWebContent":
+                    return <ToolFetchWebContent key={index} part={part} />;
+
+                  case "tool-saveToFolder":
+                    return <ToolSaveToFolder key={index} part={part} />;
 
                   default:
                     return null;

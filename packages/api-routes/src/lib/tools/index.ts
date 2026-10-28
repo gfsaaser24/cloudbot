@@ -5,7 +5,17 @@ import { artifactSchema } from "../../schemas/artifact-schema.js";
 import { createDocument } from "./create-document.js";
 import { extractFromDocuments } from "./extract-from-documents.js";
 import { extractFromWeb } from "./extract-from-web.js";
+import {
+  fetchWebContent,
+  fetchWebContentInput,
+  fetchWebContentOutput,
+} from "./fetch-web-content.js";
 import { generateFile } from "./generate-file.js";
+import {
+  saveToFolder,
+  saveToFolderInput,
+  saveToFolderOutput,
+} from "./save-to-folder.js";
 import { updateDocument } from "./update-document.js";
 
 export const tools = {
@@ -14,6 +24,8 @@ export const tools = {
   createDocument: createDocument,
   updateDocument: updateDocument,
   generateFile: generateFile,
+  fetchWebContent: fetchWebContent,
+  saveToFolder: saveToFolder,
 };
 
 export const mockedTools = {
@@ -88,5 +100,13 @@ export const mockedTools = {
       size: z.number(),
       message: z.string(),
     }),
+  }),
+  fetchWebContent: tool({
+    inputSchema: fetchWebContentInput,
+    outputSchema: fetchWebContentOutput,
+  }),
+  saveToFolder: tool({
+    inputSchema: saveToFolderInput,
+    outputSchema: saveToFolderOutput,
   }),
 };
