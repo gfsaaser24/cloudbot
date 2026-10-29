@@ -32,6 +32,11 @@ import {
 } from "../tools/import-youtube-transcripts.js";
 import { saveToFolder } from "../tools/save-to-folder.js";
 import { isFirecrawlConfigured } from "../firecrawl.js";
+import {
+  composioPrompt,
+  createComposioTools,
+  isComposioConfigured,
+} from "../composio.js";
 import { generateFile } from "../tools/generate-file.js";
 import { updateDocument } from "../tools/update-document.js";
 import { ChatHandler } from "./chat-handler.js";
@@ -59,6 +64,10 @@ export class StandardChatHandler extends ChatHandler {
 
   private async buildSystemPrompt(): Promise<string> {
     let finalPrompt = await this.buildBaseSystemPrompt(this.systemPrompt);
+
+    if (isComposioConfigured()) {
+      finalPrompt += composioPrompt;
+    }
 
     if (this.project) {
       const effectiveFilter = this.getEffectiveContextFilter();
@@ -96,6 +105,17 @@ export class StandardChatHandler extends ChatHandler {
   // The message's context filter, falling back to the chat's project folder
   private getEffectiveContextFilter() {
     return withProjectFolder(this.getContextFilter(), this.project?.folder.id);
+  }
+
+  // A Composio outage shouldn't break the chat: carry on without app tools.
+  private async composioTools(): Promise<Record<string, Tool>> {
+    if (!isComposioConfigured()) return {};
+    try {
+      return await createComposioTools(this.request.user.id);
+    } catch (error) {
+      logger.error("Could not load Composio tools", error);
+      return {};
+    }
   }
 
   protected async retrieveToolSet(
@@ -139,6 +159,8 @@ export class StandardChatHandler extends ChatHandler {
             }),
           }
         : {}),
+      // Connected apps (Gmail, Slack, Notion, ...) via Composio; needs COMPOSIO_API_KEY.
+      ...(await this.composioTools()),
     };
 
     // Only include extractFromDocuments if context filter has files or folders

@@ -12,6 +12,7 @@ import dynamic from "next/dynamic";
 import { useMemo } from "react";
 import {
   ToolCreateDocument,
+  ToolDynamic,
   ToolExtractFromDocuments,
   ToolExtractFromWeb,
   ToolFetchWebContent,
@@ -177,6 +178,9 @@ export const AgentMessage = ({
 
                   case "tool-getImportStatus":
                     return <ToolGetImportStatus key={index} part={part} />;
+
+                  case "dynamic-tool":
+                    return <ToolDynamic key={index} part={part} />;
 
                   default:
                     return null;

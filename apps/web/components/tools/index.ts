@@ -1,4 +1,5 @@
 export { ToolCreateDocument } from "./create-document";
+export { ToolDynamic } from "./dynamic-tool";
 export { ToolExtractFromDocuments } from "./extract-from-documents";
 export { ToolExtractFromWeb } from "./extract-from-web";
 export { ToolFetchWebContent } from "./fetch-web-content";
