@@ -322,6 +322,31 @@
         "documents": "Search for documents...",
         "prompts": "Search for prompts..."
     },
+    "project": {
+        "badge": "Project: {name}",
+        "addToProject": "Add to project",
+        "openFolder": "Open folder",
+        "changeProject": "Change project",
+        "removeFromProject": "Remove from project",
+        "pickerTitle": "Choose a project",
+        "pickerDescription": "The chat uses the folder's files as context.",
+        "moving": "Moving chat...",
+        "moved": "Chat moved to {name}",
+        "removing": "Removing chat from project...",
+        "removed": "Chat removed from project",
+        "checkingAccess": "Checking folder access...",
+        "noAccess": "You don't have access to this folder",
+        "cueSearches": "Answers use files in {name}",
+        "cueOverridden": "This message searches your selection instead of {name}",
+        "newChatInFolder": "New chat in this folder",
+        "newChat": "New chat",
+        "allFolders": "All folders",
+        "folder": "Folder",
+        "chats": "Chats",
+        "noChats": "No chats in this folder yet.",
+        "files": "Files",
+        "noFiles": "No files in this folder yet."
+    },
     "folderCombobox": {
         "placeholder": "Search folders...",
         "noFoldersFound": "No folders found"

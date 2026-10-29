@@ -27,16 +27,16 @@ import { Loader2, MoreHorizontal } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { memo, useState } from "react";
 import { toast } from "sonner";
-import { ChatItem } from "../custom/chat-item";
+import { ChatItem, type ChatListItem } from "../custom/chat-item";
 import { ChatSearch } from "../custom/chat-search";
 import { RenameForm, type RenameFormData } from "../custom/rename-form";
 
 type GroupedChats = {
-  today: Chat[];
-  yesterday: Chat[];
-  lastWeek: Chat[];
-  lastMonth: Chat[];
-  older: Chat[];
+  today: ChatListItem[];
+  yesterday: ChatListItem[];
+  lastWeek: ChatListItem[];
+  lastMonth: ChatListItem[];
+  older: ChatListItem[];
 };
 
 export const NavHistory = memo(() => {
@@ -182,6 +182,7 @@ export const NavHistory = memo(() => {
         // Update the cache
         removeFromInfiniteCache(queryClient, ["chats"], chatId);
         removeFromInfiniteCache(queryClient, ["favourites"], chatId);
+        queryClient.invalidateQueries({ queryKey: ["folder-chats"] });
 
         if (chatId === id) {
           router.push("/");
@@ -199,6 +200,7 @@ export const NavHistory = memo(() => {
       success: (data) => {
         // Invalidate the chats cache to show the new forked chat
         queryClient.invalidateQueries({ queryKey: ["chats"] });
+        queryClient.invalidateQueries({ queryKey: ["folder-chats"] });
         router.push(`/${locale}/chat?id=${data.id}`);
         return webT.navHistory.chatForked;
       },
@@ -219,9 +221,11 @@ export const NavHistory = memo(() => {
     setRenameDialogOpen(false);
 
     // Update the cache
+    // Keep the rest of the cached title data (the chat's folder)
     queryClient.setQueryData(
       ["chatTitle", currentChatId],
-      [{ title: values.title }],
+      (old: { title: string } | undefined) =>
+        old && { ...old, title: values.title },
     );
     updateInfiniteCache(queryClient, ["chats"], (item) => {
       return item.id !== currentChatId
@@ -237,7 +241,7 @@ export const NavHistory = memo(() => {
     return webT.navHistory.chatRenamed;
   };
 
-  const groupChatsByDate = (chats: Chat[]): GroupedChats => {
+  const groupChatsByDate = (chats: ChatListItem[]): GroupedChats => {
     const now = new Date();
     const oneWeekAgo = subWeeks(now, 1);
     const oneMonthAgo = subMonths(now, 1);

@@ -22,6 +22,18 @@ export interface ChatModel {
 
 const STORAGE_KEY = "cloudchat:model";
 
+// A folder used as a chat's project.
+export interface ProjectFolder {
+  id: string;
+  name: string;
+}
+
+// The project picked for a chat that isn't saved yet. Its first message sends the folder id.
+export interface PendingProject {
+  chatId: string;
+  folder: ProjectFolder | null;
+}
+
 function defaultChatModel(): ChatModel {
   const model = chatModels[0];
   if (!model) {
@@ -46,6 +58,10 @@ interface ChatControlContextType {
   setReasoningEnabled: React.Dispatch<React.SetStateAction<boolean>>;
   webSearchEnabled: boolean;
   setWebSearchEnabled: React.Dispatch<React.SetStateAction<boolean>>;
+  pendingProject: PendingProject | null;
+  setPendingProject: React.Dispatch<
+    React.SetStateAction<PendingProject | null>
+  >;
 }
 
 const ChatControlContext = createContext<ChatControlContextType | undefined>(
@@ -78,6 +94,9 @@ export function ChatControlProvider({ children }: Props) {
   const [isTemporary, setIsTemporary] = useState(false);
   const [reasoningEnabled, setReasoningEnabled] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [pendingProject, setPendingProject] = useState<PendingProject | null>(
+    null,
+  );
 
   return (
     <ChatControlContext.Provider
@@ -90,6 +109,8 @@ export function ChatControlProvider({ children }: Props) {
         setReasoningEnabled,
         webSearchEnabled,
         setWebSearchEnabled,
+        pendingProject,
+        setPendingProject,
       }}
     >
       {children}

@@ -47,8 +47,13 @@ const PureMultimodalInput = ({
   const { locale } = useSharedTranslations();
   const { webT } = useWebTranslations();
   const { filter } = useFilter();
-  const { selectedChatModel, isTemporary, reasoningEnabled, webSearchEnabled } =
-    useChatControl();
+  const {
+    selectedChatModel,
+    isTemporary,
+    reasoningEnabled,
+    webSearchEnabled,
+    pendingProject,
+  } = useChatControl();
   const { uploadQueue, handleFileChange, handleFilesUpload } = useFileUpload();
   const [localStorageInput, setLocalStorageInput] = useLocalStorage(
     "input",
@@ -220,6 +225,11 @@ const PureMultimodalInput = ({
           temporary: isTemporary,
           reasoning: selectedChatModel.reasoning && reasoningEnabled,
           webSearch: webSearchEnabled,
+          // Only used when this message creates the chat
+          folderId:
+            !isTemporary && pendingProject?.chatId === chatId
+              ? pendingProject.folder?.id
+              : undefined,
         },
       },
     );
@@ -244,6 +254,7 @@ const PureMultimodalInput = ({
     isTemporary,
     reasoningEnabled,
     webSearchEnabled,
+    pendingProject,
   ]);
 
   return (

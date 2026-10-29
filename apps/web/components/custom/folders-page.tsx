@@ -1,6 +1,7 @@
 "use client";
 
 import { useWebTranslations } from "@/contexts/web-translations";
+import { folderHref, newChatInFolderHref } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
@@ -15,9 +16,11 @@ import {
   Globe,
   Loader2,
   Lock,
+  MessageSquarePlus,
   ShieldCheck,
   Trash2,
 } from "lucide-react";
+import Link from "next/link";
 import { memo, useState } from "react";
 import { CreateFolderDialog } from "./create-folder-dialog";
 import { DeleteForm } from "./delete-form";
@@ -51,7 +54,7 @@ const visibilityConfig = {
 };
 
 export const FoldersPage = memo(() => {
-  const { sharedT } = useSharedTranslations();
+  const { sharedT, locale } = useSharedTranslations();
   const { webT } = useWebTranslations();
   const queryClient = useQueryClient();
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -99,6 +102,10 @@ export const FoldersPage = memo(() => {
         sharedT.apiCodes,
       );
       queryClient.invalidateQueries({ queryKey: ["folders"] });
+      // Its chats lose their folder
+      queryClient.invalidateQueries({ queryKey: ["chats"] });
+      queryClient.invalidateQueries({ queryKey: ["favourites"] });
+      queryClient.invalidateQueries({ queryKey: ["chatTitle"] });
     } finally {
       setDeletingId(null);
       setFolderToDelete(null);
@@ -169,9 +176,14 @@ export const FoldersPage = memo(() => {
                   >
                     <Icon className="size-4" />
                   </div>
-                  <div className="flex-1 overflow-hidden">
-                    <h3 className="truncate font-medium">{folder.name}</h3>
-                  </div>
+                  <Link
+                    href={folderHref(locale, folder)}
+                    className="flex-1 overflow-hidden"
+                  >
+                    <h3 className="truncate font-medium hover:underline">
+                      {folder.name}
+                    </h3>
+                  </Link>
                   <Badge
                     variant="outline"
                     className={cn(
@@ -181,6 +193,20 @@ export const FoldersPage = memo(() => {
                   >
                     {folder.visibility}
                   </Badge>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground shrink-0"
+                    title={webT.project.newChatInFolder}
+                    asChild
+                  >
+                    <Link href={newChatInFolderHref(locale, folder)}>
+                      <MessageSquarePlus className="size-4" />
+                      <span className="hidden sm:inline">
+                        {webT.project.newChat}
+                      </span>
+                    </Link>
+                  </Button>
                   <Button
                     variant="ghost"
                     size="sm"

@@ -9,7 +9,13 @@ import { Skeleton } from "@workspace/ui/components/skeleton";
 import { useSharedTranslations } from "@workspace/ui/contexts/shared-translations-context";
 import { useInfiniteQueryWithRPC } from "@workspace/ui/hooks/use-infinite-query";
 import { apiFetcher } from "@workspace/ui/lib/fetcher";
-import { Loader2, MessageSquare, Search, Trash2 } from "lucide-react";
+import {
+  FolderOpen,
+  Loader2,
+  MessageSquare,
+  Search,
+  Trash2,
+} from "lucide-react";
 import Link from "next/link";
 import { memo, useEffect, useState } from "react";
 import { DeleteForm } from "./delete-form";
@@ -18,6 +24,7 @@ interface Chat {
   id: string;
   title: string;
   createdAt: string;
+  folderName: string | null;
 }
 
 export const ChatsPage = memo(() => {
@@ -94,6 +101,7 @@ export const ChatsPage = memo(() => {
       );
       queryClient.invalidateQueries({ queryKey: ["all-chats"] });
       queryClient.invalidateQueries({ queryKey: ["chats"] });
+      queryClient.invalidateQueries({ queryKey: ["folder-chats"] });
     } finally {
       setDeletingId(null);
       setChatToDelete(null);
@@ -175,8 +183,17 @@ export const ChatsPage = memo(() => {
                   <h3 className="truncate font-medium">
                     {chat.title || "Untitled Chat"}
                   </h3>
-                  <p className="text-muted-foreground text-xs">
-                    {formatDate(chat.createdAt)}
+                  <p className="text-muted-foreground flex min-w-0 items-center gap-1 text-xs">
+                    <span className="shrink-0">
+                      {formatDate(chat.createdAt)}
+                    </span>
+                    {chat.folderName && (
+                      <>
+                        <span aria-hidden>·</span>
+                        <FolderOpen className="size-3 shrink-0" />
+                        <span className="truncate">{chat.folderName}</span>
+                      </>
+                    )}
                   </p>
                 </div>
                 <Button

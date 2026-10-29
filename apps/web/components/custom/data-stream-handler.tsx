@@ -45,6 +45,7 @@ export function DataStreamHandler() {
           console.log("Chat created with ID:", delta.data.chatId);
 
           queryClient.invalidateQueries({ queryKey: ["chats"] });
+          queryClient.invalidateQueries({ queryKey: ["folder-chats"] });
           queryClient.invalidateQueries({
             queryKey: ["chatTitle", delta.data.chatId],
           });

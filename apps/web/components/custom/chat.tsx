@@ -15,6 +15,7 @@ import { ChatHeader } from "./chat-header";
 import { Greeting } from "./greeting";
 import { Messages } from "./messages";
 import { MultimodalInput } from "./multimodal-input";
+import { ProjectCue } from "./project-cue";
 
 export function Chat({
   chatId,
@@ -75,15 +76,17 @@ export function Chat({
       }),
     });
 
+  const chatState = {
+    chatId,
+    isEmpty: messages.length === 0,
+    isLoading: status === "submitted" || status === "streaming",
+    isNewChat: messages.length < 2,
+  };
+
   return (
     <>
       <div className="flex h-dvh flex-col">
-        <ChatHeader
-          chatId={chatId}
-          isEmpty={messages.length === 0}
-          isLoading={status === "submitted" || status === "streaming"}
-          isNewChat={messages.length < 2}
-        />
+        <ChatHeader {...chatState} />
 
         {messages.length === 0 ? (
           <Greeting />
@@ -98,6 +101,7 @@ export function Chat({
         )}
 
         <form className="mx-auto w-full -translate-y-1 sm:px-4 sm:pb-4 md:max-w-3xl md:px-6 md:pb-6">
+          <ProjectCue {...chatState} />
           <MultimodalInput
             sendMessage={sendMessage}
             chatId={chatId}

@@ -28,3 +28,20 @@ export function minimizeFilter(filter: ContextFilter) {
     documents: filter.documents.map((doc) => ({ id: doc.id })),
   };
 }
+
+// A folder's page. The static export has no dynamic segments and the API has no
+// folder-by-id endpoint, so the name travels in the link for display.
+export function folderHref(
+  locale: string,
+  folder: { id: string; name: string },
+) {
+  return `/${locale}/folders?${new URLSearchParams({ id: folder.id, name: folder.name })}`;
+}
+
+// The new-chat page with the folder preselected as the chat's project.
+export function newChatInFolderHref(
+  locale: string,
+  folder: { id: string; name: string },
+) {
+  return `/${locale}?${new URLSearchParams({ folder: folder.id, name: folder.name })}`;
+}

@@ -24,8 +24,11 @@ import {
 import Link from "next/link";
 import { memo } from "react";
 
+// A chat in the history lists, with the name of its project folder if it has one.
+export type ChatListItem = Chat & { folderName: string | null };
+
 interface PureChatItemProps {
-  chat: Chat;
+  chat: ChatListItem;
   isActive: boolean;
   isFavorite: boolean;
   onFavorite: (chatId: string) => void;
@@ -61,7 +64,14 @@ const PureChatItem = ({
           }
           onClick={() => setOpenMobile(false)}
         >
-          <span>{chat.title || webT.chatItem.defaultTitle}</span>
+          <span className="truncate">
+            {chat.title || webT.chatItem.defaultTitle}
+          </span>
+          {chat.folderName && (
+            <span className="text-sidebar-foreground/50 ml-auto max-w-[40%] shrink-0 text-xs">
+              {chat.folderName}
+            </span>
+          )}
         </Link>
       </SidebarMenuButton>
 
@@ -128,6 +138,7 @@ const PureChatItem = ({
 export const ChatItem = memo(PureChatItem, (prevProps, nextProps) => {
   if (prevProps.chat.id !== nextProps.chat.id) return false;
   if (prevProps.chat.title !== nextProps.chat.title) return false;
+  if (prevProps.chat.folderName !== nextProps.chat.folderName) return false;
   if (prevProps.isActive !== nextProps.isActive) return false;
 
   return true;

@@ -3,6 +3,7 @@
 import { useChatControl } from "@/contexts/chat-control-context";
 import { useRefs } from "@/contexts/refs-context";
 import { useWebTranslations } from "@/contexts/web-translations";
+import { useChatProject } from "@/hooks/use-chat-project";
 import { resizeEditor } from "@/lib/utils";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@workspace/ui/components/button";
@@ -19,6 +20,7 @@ import { PanelRightIcon, Star } from "lucide-react";
 import { memo } from "react";
 import { toast } from "sonner";
 import { FolderSelector } from "./folder-selector";
+import { ProjectMenu } from "./project-menu";
 
 interface ChatHeaderProps {
   chatId: string;
@@ -35,18 +37,11 @@ export const ChatHeader = memo(
     const { panelRef } = useRefs();
     const { isTemporary } = useChatControl();
 
-    const { data: titleData, isLoading: titleIsLoading } = useQuery({
-      queryKey: ["chatTitle", chatId],
-      queryFn: () =>
-        apiFetcher(
-          (client) =>
-            client["chats"]["title"][":chatId"].$get({
-              param: { chatId },
-            }),
-          sharedT.apiCodes,
-        ),
-      enabled: !isEmpty && !isTemporary && !isLoading && !isNewChat,
-    });
+    const {
+      folder,
+      isSaved,
+      titleQuery: { data: titleData, isLoading: titleIsLoading },
+    } = useChatProject({ chatId, isEmpty, isLoading, isNewChat });
 
     const { data: favouritesData } = useQuery({
       queryKey: ["liked", chatId],
@@ -111,6 +106,15 @@ export const ChatHeader = memo(
                 {titleData?.title || "Chat"}
               </h1>
             ))}
+          {!isTemporary && (
+            <ProjectMenu
+              chatId={chatId}
+              folder={folder}
+              isSaved={isSaved}
+              // While the first reply streams, the chat isn't loaded as saved yet
+              disabled={!isEmpty && !isSaved}
+            />
+          )}
         </div>
         <div className="flex items-center gap-3">
           <FolderSelector />

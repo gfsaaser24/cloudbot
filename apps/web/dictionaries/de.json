@@ -322,6 +322,31 @@
         "documents": "Dokumente suchen...",
         "prompts": "Prompts suchen..."
     },
+    "project": {
+        "badge": "Projekt: {name}",
+        "addToProject": "Zu Projekt hinzufügen",
+        "openFolder": "Ordner öffnen",
+        "changeProject": "Projekt wechseln",
+        "removeFromProject": "Aus Projekt entfernen",
+        "pickerTitle": "Projekt auswählen",
+        "pickerDescription": "Der Chat nutzt die Dateien des Ordners als Kontext.",
+        "moving": "Chat wird verschoben...",
+        "moved": "Chat nach {name} verschoben",
+        "removing": "Chat wird aus dem Projekt entfernt...",
+        "removed": "Chat aus dem Projekt entfernt",
+        "checkingAccess": "Ordnerzugriff wird geprüft...",
+        "noAccess": "Sie haben keinen Zugriff auf diesen Ordner",
+        "cueSearches": "Antworten nutzen Dateien aus {name}",
+        "cueOverridden": "Diese Nachricht durchsucht Ihre Auswahl statt {name}",
+        "newChatInFolder": "Neuer Chat in diesem Ordner",
+        "newChat": "Neuer Chat",
+        "allFolders": "Alle Ordner",
+        "folder": "Ordner",
+        "chats": "Chats",
+        "noChats": "Noch keine Chats in diesem Ordner.",
+        "files": "Dateien",
+        "noFiles": "Noch keine Dateien in diesem Ordner."
+    },
     "folderCombobox": {
         "placeholder": "Ordner suchen...",
         "noFoldersFound": "Keine Ordner gefunden"
