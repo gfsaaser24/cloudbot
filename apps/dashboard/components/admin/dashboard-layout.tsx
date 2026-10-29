@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useDashboardTranslations } from "@/contexts/dashboard-translations";
 import { Separator } from "@workspace/ui/components/separator";
+import { useSharedTranslations } from "@workspace/ui/contexts/shared-translations-context";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import React from "react";
@@ -23,10 +24,13 @@ import React from "react";
 const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
   const pathname = usePathname();
   const { dashboardT } = useDashboardTranslations();
+  const { locale } = useSharedTranslations();
   const pathSegments = pathname.split("/").filter((segment) => segment);
 
+  // Paths look like /<locale>/admin/<page>; the breadcrumb shows only what follows "admin".
+  const adminIndex = pathSegments.indexOf("admin");
   const relevantSegments =
-    pathSegments[0] === "admin" ? pathSegments.slice(1) : pathSegments;
+    adminIndex === -1 ? [] : pathSegments.slice(adminIndex + 1);
 
   return (
     <SidebarProvider>
@@ -40,14 +44,14 @@ const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
               <BreadcrumbList>
                 <BreadcrumbItem>
                   <BreadcrumbLink asChild>
-                    <Link href="/admin">
+                    <Link href={`/${locale}/admin/users`}>
                       {dashboardT.dashboardLayout.admin}
                     </Link>
                   </BreadcrumbLink>
                 </BreadcrumbItem>
                 {relevantSegments.length > 0 && <BreadcrumbSeparator />}
                 {relevantSegments.map((segment, index) => {
-                  const href = `/admin/${relevantSegments
+                  const href = `/${locale}/admin/${relevantSegments
                     .slice(0, index + 1)
                     .join("/")}`;
                   const isLast = index === relevantSegments.length - 1;

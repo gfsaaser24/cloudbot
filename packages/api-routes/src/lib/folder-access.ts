@@ -4,7 +4,7 @@ import {
   folderUsers,
   folders,
 } from "@workspace/server/drizzle/schema.js";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 
 async function isFolderMember(
   folderId: string,
@@ -32,6 +32,25 @@ export async function canWriteToFolder(
   if (folder.visibility === "private") return folder.owner === userId;
 
   return isFolderMember(folder.id, userId);
+}
+
+// Every folder the user may write to, in one query (same rules as canWriteToFolder).
+export async function listWritableFolders(userId: string): Promise<Folder[]> {
+  const memberOf = db()
+    .select({ folderId: folderUsers.folderId })
+    .from(folderUsers)
+    .where(eq(folderUsers.userId, userId));
+
+  return db()
+    .select()
+    .from(folders)
+    .where(
+      or(
+        eq(folders.visibility, "public"),
+        and(eq(folders.visibility, "private"), eq(folders.owner, userId)),
+        and(eq(folders.visibility, "protected"), inArray(folders.id, memberOf)),
+      ),
+    );
 }
 
 // Who may read a folder (search it, use it as a chat's project):

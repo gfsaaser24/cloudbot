@@ -104,7 +104,7 @@ export const FilesPage = memo(() => {
               },
             }),
           sharedT.apiCodes,
-        ).then((results) => setIlikeResults(results as unknown as FileItem[]));
+        ).then((results) => setIlikeResults(results));
       } else {
         setIlikeResults(null);
       }

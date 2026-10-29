@@ -99,7 +99,7 @@ export const FoldersList = memo(
               client["folders"].$get({
                 query: {
                   pageNumber: (pageParam ?? 0).toString(),
-                  itemsPerPage: "10",
+                  itemsPerPage: "20",
                 },
               }),
             sharedT.apiCodes,

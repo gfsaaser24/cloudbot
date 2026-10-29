@@ -91,7 +91,7 @@ const PureMessageEditor = ({
         messageId: message.id,
         body: {
           model: selectedChatModel.id,
-          isTemporary: isTemporary,
+          temporary: isTemporary,
           reasoning: selectedChatModel.reasoning && reasoningEnabled,
           webSearch: webSearchEnabled,
         },

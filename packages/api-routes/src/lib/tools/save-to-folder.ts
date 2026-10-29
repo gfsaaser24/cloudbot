@@ -1,5 +1,5 @@
 import { db } from "@workspace/server/drizzle/db.js";
-import { files, folders } from "@workspace/server/drizzle/schema.js";
+import { files } from "@workspace/server/drizzle/schema.js";
 import { createLogger } from "@workspace/server/logger/logger.js";
 import { tool } from "ai";
 import { and, eq } from "drizzle-orm";
@@ -7,7 +7,7 @@ import * as z from "zod";
 import { type Bindings } from "../../types/bindings.js";
 import { generateUUID } from "../../utils/generate-uuid.js";
 import { isFirecrawlConfigured, scrapeToMarkdown } from "../firecrawl.js";
-import { canWriteToFolder, folderObjectKey } from "../folder-access.js";
+import { folderObjectKey, listWritableFolders } from "../folder-access.js";
 
 const logger = createLogger("save-to-folder");
 
@@ -59,15 +59,6 @@ function toMarkdownFilename(name: string): string {
   return `${base || "saved"}.md`;
 }
 
-async function writableFolders(userId: string) {
-  const all = await db().select().from(folders);
-  const writable = [];
-  for (const folder of all) {
-    if (await canWriteToFolder(folder, userId)) writable.push(folder);
-  }
-  return writable;
-}
-
 export const saveToFolder = ({
   env,
   userId,
@@ -80,7 +71,7 @@ export const saveToFolder = ({
     outputSchema: saveToFolderOutput,
     execute: async ({ folder: folderRef, filename, url, content }) => {
       try {
-        const writable = await writableFolders(userId);
+        const writable = await listWritableFolders(userId);
 
         if (!folderRef && !defaultFolderId) {
           return {

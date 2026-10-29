@@ -19,10 +19,11 @@ const logger = createLogger("filter-authorized-files");
  * - Protected files require user to be in folderUsers
  * - Private files require user to be the owner
  */
-export async function filterAuthorizedFiles(
-  fileList: FileMetadata[],
+// Generic so callers keep the full row type (e.g. createdAt) in their responses.
+export async function filterAuthorizedFiles<T extends FileMetadata>(
+  fileList: T[],
   userId: string,
-): Promise<FileMetadata[]> {
+): Promise<T[]> {
   const filteredFiles = await Promise.all(
     fileList.map(async (file) => {
       // Public files are always allowed

@@ -12,6 +12,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { useDashboardTranslations } from "@/contexts/dashboard-translations";
+import { useSharedTranslations } from "@workspace/ui/contexts/shared-translations-context";
 import { signOut } from "@workspace/ui/lib/auth-client";
 import { GalleryVerticalEnd, LogOut, MailPlus, Users } from "lucide-react";
 import Link from "next/link";
@@ -21,16 +22,17 @@ export function DashboardSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { dashboardT } = useDashboardTranslations();
+  const { locale } = useSharedTranslations();
   const t = dashboardT.dashboardSidebar;
 
   const sidebarNavItems = [
     {
-      href: "/admin/users",
+      href: `/${locale}/admin/users`,
       icon: Users,
       label: t.users,
     },
     {
-      href: "/admin/invites",
+      href: `/${locale}/admin/invites`,
       icon: MailPlus,
       label: t.invites,
     },
@@ -39,7 +41,7 @@ export function DashboardSidebar() {
   const handleLogout = async () => {
     try {
       await signOut();
-      router.push("/auth/login");
+      router.push(`/${locale}/sign-in`);
     } catch (error) {
       console.error("Logout failed:", error);
     }

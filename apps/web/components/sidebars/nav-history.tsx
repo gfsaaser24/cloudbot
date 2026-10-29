@@ -147,7 +147,7 @@ export const NavHistory = memo(() => {
       success: () => {
         // Update the cache
         queryClient.invalidateQueries({ queryKey: ["favourites"] });
-        queryClient.setQueryData(["liked", chatId], [{ is_favourite: true }]);
+        queryClient.setQueryData(["liked", chatId], { isFavourite: true });
 
         return webT.navHistory.addedToFavorites;
       },
@@ -161,7 +161,7 @@ export const NavHistory = memo(() => {
       success: () => {
         // Update the cache
         removeFromInfiniteCache(queryClient, ["favourites"], chatId);
-        queryClient.setQueryData(["liked", chatId], [{ is_favourite: false }]);
+        queryClient.setQueryData(["liked", chatId], { isFavourite: false });
 
         return webT.navHistory.removedFromFavorites;
       },
