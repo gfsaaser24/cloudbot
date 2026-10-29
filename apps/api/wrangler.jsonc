@@ -25,7 +25,14 @@
             "ai": {
                 "binding": "AI",
                 "remote": true
-            }
+            },
+            "workflows": [
+                {
+                    "name": "cloudbot-transcript-import-dev",
+                    "binding": "TRANSCRIPT_IMPORT",
+                    "class_name": "TranscriptImport"
+                }
+            ]
         },
         "production": {
             "r2_buckets": [
@@ -46,7 +53,15 @@
             "ai": {
                 "binding": "AI",
                 "remote": true
-            }
+            },
+            // YouTube channel/playlist transcript imports (apps/api/src/workflows/transcript-import.ts)
+            "workflows": [
+                {
+                    "name": "cloudbot-transcript-import",
+                    "binding": "TRANSCRIPT_IMPORT",
+                    "class_name": "TranscriptImport"
+                }
+            ]
         }
     },
     // Static exports of apps/web (at /) and apps/dashboard (at /dashboard), assembled by `pnpm build-assets`.

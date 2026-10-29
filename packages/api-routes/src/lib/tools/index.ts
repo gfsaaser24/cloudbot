@@ -12,6 +12,14 @@ import {
 } from "./fetch-web-content.js";
 import { generateFile } from "./generate-file.js";
 import {
+  getImportStatus,
+  getImportStatusInput,
+  getImportStatusOutput,
+  importYouTubeTranscripts,
+  importYouTubeTranscriptsInput,
+  importYouTubeTranscriptsOutput,
+} from "./import-youtube-transcripts.js";
+import {
   saveToFolder,
   saveToFolderInput,
   saveToFolderOutput,
@@ -26,6 +34,8 @@ export const tools = {
   generateFile: generateFile,
   fetchWebContent: fetchWebContent,
   saveToFolder: saveToFolder,
+  importYouTubeTranscripts: importYouTubeTranscripts,
+  getImportStatus: getImportStatus,
 };
 
 export const mockedTools = {
@@ -108,5 +118,13 @@ export const mockedTools = {
   saveToFolder: tool({
     inputSchema: saveToFolderInput,
     outputSchema: saveToFolderOutput,
+  }),
+  importYouTubeTranscripts: tool({
+    inputSchema: importYouTubeTranscriptsInput,
+    outputSchema: importYouTubeTranscriptsOutput,
+  }),
+  getImportStatus: tool({
+    inputSchema: getImportStatusInput,
+    outputSchema: getImportStatusOutput,
   }),
 };

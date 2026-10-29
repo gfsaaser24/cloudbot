@@ -26,6 +26,10 @@ import { createDocument } from "../tools/create-document.js";
 import { extractFromDocuments } from "../tools/extract-from-documents.js";
 import { extractFromWeb } from "../tools/extract-from-web.js";
 import { fetchWebContent } from "../tools/fetch-web-content.js";
+import {
+  getImportStatus,
+  importYouTubeTranscripts,
+} from "../tools/import-youtube-transcripts.js";
 import { saveToFolder } from "../tools/save-to-folder.js";
 import { isFirecrawlConfigured } from "../firecrawl.js";
 import { generateFile } from "../tools/generate-file.js";
@@ -45,8 +49,12 @@ export class StandardChatHandler extends ChatHandler {
   private systemPrompt = standardSystemPrompt;
   private project?: Project; // Loaded at the start of executeChat
 
-  constructor(env: Bindings, request: ChatRequest) {
-    super(env, request);
+  constructor(
+    env: Bindings,
+    request: ChatRequest,
+    waitUntil?: (promise: PromiseLike<unknown>) => void,
+  ) {
+    super(env, request, waitUntil);
   }
 
   private async buildSystemPrompt(): Promise<string> {
@@ -117,7 +125,20 @@ export class StandardChatHandler extends ChatHandler {
         defaultFolderId: this.project?.folder.id,
       }),
       // Needs FIRECRAWL_API_KEY (pages and YouTube transcripts).
-      ...(isFirecrawlConfigured() ? { fetchWebContent: fetchWebContent() } : {}),
+      ...(isFirecrawlConfigured()
+        ? {
+            fetchWebContent: fetchWebContent(),
+            importYouTubeTranscripts: importYouTubeTranscripts({
+              env: this.env,
+              userId: this.request.user.id,
+              defaultFolderId: this.project?.folder.id,
+            }),
+            getImportStatus: getImportStatus({
+              env: this.env,
+              userId: this.request.user.id,
+            }),
+          }
+        : {}),
     };
 
     // Only include extractFromDocuments if context filter has files or folders
@@ -250,9 +271,13 @@ export class StandardChatHandler extends ChatHandler {
       ...streamConfig,
       tools,
       stopWhen: stepCountIs(6),
+      onError: ({ error }) => {
+        logger.error("Model stream error", error);
+      },
     });
 
-    result.consumeStream(); // Consume the stream even if the client disconnects to avoid having unfinished responses
+    // Finish generating even if the client disconnects, so the reply isn't lost.
+    this.waitUntil?.(result.consumeStream());
 
     writer.merge(
       result.toUIMessageStream({
@@ -267,13 +292,16 @@ export class StandardChatHandler extends ChatHandler {
           }
         },
         sendReasoning: true,
+        // Show the real error (e.g. the provider's message) instead of a generic one.
+        onError: (error) => this.handleError(error),
       }),
     );
   }
 
-  protected handleError(error: any): string {
+  protected handleError(error: unknown): string {
     logger.error("Error in chat route", error);
 
-    return "An error occurred. Please try again later.";
+    const detail = error instanceof Error ? error.message : String(error);
+    return `Something went wrong: ${detail.slice(0, 300)}`;
   }
 }

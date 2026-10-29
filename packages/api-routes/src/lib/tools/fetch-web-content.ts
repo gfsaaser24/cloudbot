@@ -1,7 +1,7 @@
 import { createLogger } from "@workspace/server/logger/logger.js";
 import { tool } from "ai";
 import * as z from "zod";
-import { scrapeToMarkdown } from "../firecrawl.js";
+import { fetchForSaving } from "../folder-files.js";
 
 const logger = createLogger("fetch-web-content");
 
@@ -22,19 +22,23 @@ export const fetchWebContentOutput = z.object({
 export const fetchWebContent = () =>
   tool({
     description:
-      "Fetches a specific URL and returns its content as Markdown. For YouTube videos this returns the transcript (when captions exist). Use it when the user gives you a link to read, summarize or quote. To store the full content in a folder, call saveToFolder with the url instead of copying the content.",
+      "Fetches a specific URL and returns its content as Markdown. For a single YouTube video this returns its transcript (when captions exist). For a whole channel or playlist use importYouTubeTranscripts. Use it when the user gives you a link to read, summarize or quote. To store the full content in a folder, call saveToFolder with the url instead of copying the content.",
     inputSchema: fetchWebContentInput,
     outputSchema: fetchWebContentOutput,
     execute: async ({ url }) => {
       try {
-        const page = await scrapeToMarkdown(url);
-        const truncated = page.markdown.length > MAX_CONTENT_CHARS;
+        // Same checks as saving: no channel pages, error pages or empty transcripts.
+        const fetched = await fetchForSaving(url);
+        if (!fetched.ok) {
+          return { url, title: "", content: fetched.reason, truncated: false };
+        }
+        const truncated = fetched.markdown.length > MAX_CONTENT_CHARS;
         return {
-          url: page.url,
-          title: page.title,
+          url,
+          title: fetched.title,
           content: truncated
-            ? page.markdown.slice(0, MAX_CONTENT_CHARS)
-            : page.markdown,
+            ? fetched.markdown.slice(0, MAX_CONTENT_CHARS)
+            : fetched.markdown,
           truncated,
         };
       } catch (error) {

@@ -1,13 +1,13 @@
-import { db } from "@workspace/server/drizzle/db.js";
-import { files } from "@workspace/server/drizzle/schema.js";
 import { createLogger } from "@workspace/server/logger/logger.js";
 import { tool } from "ai";
-import { and, eq } from "drizzle-orm";
 import * as z from "zod";
 import { type Bindings } from "../../types/bindings.js";
-import { generateUUID } from "../../utils/generate-uuid.js";
-import { isFirecrawlConfigured, scrapeToMarkdown } from "../firecrawl.js";
-import { folderObjectKey, listWritableFolders } from "../folder-access.js";
+import { isFirecrawlConfigured } from "../firecrawl.js";
+import {
+  fetchForSaving,
+  resolveWritableFolder,
+  writeMarkdownFile,
+} from "../folder-files.js";
 
 const logger = createLogger("save-to-folder");
 
@@ -25,7 +25,7 @@ export const saveToFolderInput = z.object({
     .url()
     .optional()
     .describe(
-      "Fetch this page or YouTube video and save its full content (transcript for videos). Prefer this over content for anything from the web.",
+      "Fetch this page or single YouTube video and save its full content (the transcript for videos). Not for channels or playlists: use importYouTubeTranscripts for those. Prefer this over content for anything from the web.",
     ),
   content: z
     .string()
@@ -39,6 +39,7 @@ export const saveToFolderOutput = z.object({
   fileId: z.string().optional(),
   folder: z.string().optional(),
   filename: z.string().optional(),
+  characters: z.number().optional(), // Size of what was saved, so the model can't overstate it
   availableFolders: z.array(z.string()).optional(),
 });
 
@@ -48,17 +49,6 @@ type SaveToFolderProps = {
   defaultFolderId?: string; // The chat's project folder, used when no folder is given
 };
 
-// Same character rules as uploads (schemas/filename-schema.ts), 64 chars max.
-function toMarkdownFilename(name: string): string {
-  const base = name
-    .replace(/\.(md|markdown)$/i, "")
-    .replace(/[^a-zA-Z0-9_\- .]/g, "-")
-    .replace(/-{2,}/g, "-")
-    .trim()
-    .slice(0, 56);
-  return `${base || "saved"}.md`;
-}
-
 export const saveToFolder = ({
   env,
   userId,
@@ -66,41 +56,26 @@ export const saveToFolder = ({
 }: SaveToFolderProps) =>
   tool({
     description:
-      "Saves Markdown into one of the user's folders so it can be searched later. Use it when the user asks to save, store or keep something (a YouTube transcript, an article, notes). Pass url to fetch and save a page or video in full; pass content to save text you wrote. Leave out folder to save into the chat's project folder.",
+      "Saves Markdown into one of the user's folders so it can be searched later. Use it when the user asks to save, store or keep something (a single YouTube video's transcript, an article, notes). Pass url to fetch and save a page or video in full; pass content to save text you wrote. Leave out folder to save into the chat's project folder. Only tell the user something was saved if this returns saved: true, and report what it says.",
     inputSchema: saveToFolderInput,
     outputSchema: saveToFolderOutput,
     execute: async ({ folder: folderRef, filename, url, content }) => {
       try {
-        const writable = await listWritableFolders(userId);
-
-        if (!folderRef && !defaultFolderId) {
+        const lookup = await resolveWritableFolder(
+          userId,
+          folderRef,
+          defaultFolderId,
+        );
+        if (!lookup.folder) {
           return {
             saved: false,
-            message:
-              "No folder given and this chat has no project folder. Ask the user which folder to use.",
-            availableFolders: writable.map((f) => f.name),
+            message: lookup.message,
+            availableFolders: lookup.availableFolders,
           };
         }
+        const { folder } = lookup;
 
-        const folder = folderRef
-          ? writable.find(
-              (f) =>
-                f.id === folderRef ||
-                f.name.toLowerCase() === folderRef.trim().toLowerCase(),
-            )
-          : writable.find((f) => f.id === defaultFolderId);
-
-        if (!folder) {
-          return {
-            saved: false,
-            message: folderRef
-              ? `No folder named "${folderRef}" that you can save to. Ask the user which folder to use.`
-              : "You can't save to this chat's project folder. Ask the user which folder to use.",
-            availableFolders: writable.map((f) => f.name),
-          };
-        }
-
-        let body: string;
+        let markdown: string;
         if (url) {
           if (!isFirecrawlConfigured()) {
             return {
@@ -108,10 +83,13 @@ export const saveToFolder = ({
               message: "Fetching web pages isn't configured on this server.",
             };
           }
-          const page = await scrapeToMarkdown(url);
-          body = `# ${page.title}\n\nSource: ${page.url}\n\n${page.markdown}`;
+          const fetched = await fetchForSaving(url);
+          if (!fetched.ok) {
+            return { saved: false, message: fetched.reason };
+          }
+          markdown = fetched.markdown;
         } else if (content) {
-          body = content;
+          markdown = content;
         } else {
           return {
             saved: false,
@@ -119,44 +97,22 @@ export const saveToFolder = ({
           };
         }
 
-        // Filenames are unique per folder: add -2, -3, ... when taken.
-        const base = toMarkdownFilename(filename);
-        let name = base;
-        for (let n = 2; ; n++) {
-          const existing = await db()
-            .select({ id: files.id })
-            .from(files)
-            .where(and(eq(files.folderId, folder.id), eq(files.name, name)))
-            .limit(1);
-          if (existing.length === 0) break;
-          name = base.replace(/\.md$/, `-${n}.md`);
-        }
-
-        const bytes = new TextEncoder().encode(body);
-        await env.CLOUDBOT_BUCKET.put(
-          folderObjectKey(folder, userId, name),
-          bytes,
-          { httpMetadata: { contentType: "text/markdown" } },
-        );
-
-        const fileId = generateUUID();
-        await db().insert(files).values({
-          id: fileId,
-          folderId: folder.id,
-          name,
-          owner: userId,
-          size: bytes.byteLength,
-          format: "text/markdown",
-          visibility: folder.visibility,
-          uploadConfirmed: true,
+        const file = await writeMarkdownFile({
+          env,
+          userId,
+          folder,
+          filename,
+          body: markdown,
+          ifExists: "rename",
         });
 
         return {
           saved: true,
-          message: `Saved "${name}" to the "${folder.name}" folder. It becomes searchable within about 15 minutes.`,
-          fileId,
+          message: `Saved "${file.name}" (${markdown.length.toLocaleString("en")} characters) to the "${folder.name}" folder. It becomes searchable within about 15 minutes.`,
+          fileId: file.fileId,
           folder: folder.name,
-          filename: name,
+          filename: file.name,
+          characters: markdown.length,
         };
       } catch (error) {
         logger.error("Error in saveToFolder tool", error);

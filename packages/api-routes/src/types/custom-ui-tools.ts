@@ -2,6 +2,12 @@ import { type DocumentSource } from "../lib/tools/extract-from-documents.js";
 import { type WebSource } from "../lib/tools/extract-from-web.js";
 import { type fetchWebContentOutput } from "../lib/tools/fetch-web-content.js";
 import {
+  type getImportStatusInput,
+  type getImportStatusOutput,
+  type importYouTubeTranscriptsInput,
+  type importYouTubeTranscriptsOutput,
+} from "../lib/tools/import-youtube-transcripts.js";
+import {
   type saveToFolderInput,
   type saveToFolderOutput,
 } from "../lib/tools/save-to-folder.js";
@@ -49,5 +55,13 @@ export type CustomUITools = {
   saveToFolder: {
     input: z.infer<typeof saveToFolderInput>;
     output: z.infer<typeof saveToFolderOutput>;
+  };
+  importYouTubeTranscripts: {
+    input: z.infer<typeof importYouTubeTranscriptsInput>;
+    output: z.infer<typeof importYouTubeTranscriptsOutput>;
+  };
+  getImportStatus: {
+    input: z.infer<typeof getImportStatusInput>;
+    output: z.infer<typeof getImportStatusOutput>;
   };
 };

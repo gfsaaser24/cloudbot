@@ -1,6 +1,9 @@
 import { type Bindings } from "@workspace/api-routes/types/bindings.js";
 import app from "./app.js";
 
+// Workflow classes must be exported from the Worker entry (see wrangler.jsonc "workflows").
+export { TranscriptImport } from "./workflows/transcript-import.js";
+
 type Env = Bindings & { ASSETS: Fetcher };
 
 // One Worker serves everything on one hostname:

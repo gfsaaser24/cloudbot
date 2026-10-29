@@ -3,6 +3,7 @@ import { type Chat } from "@workspace/server/drizzle/schema.js";
 import { createLogger } from "@workspace/server/logger/logger.js";
 import {
   convertToModelMessages,
+  consumeStream,
   createUIMessageStream,
   createUIMessageStreamResponse,
   smoothStream,
@@ -40,7 +41,12 @@ export abstract class ChatHandler {
   protected env: Bindings;
   protected request: ChatRequest;
 
-  constructor(env: Bindings, request: ChatRequest) {
+  constructor(
+    env: Bindings,
+    request: ChatRequest,
+    // Keeps work alive after the browser disconnects (ExecutionContext.waitUntil)
+    protected readonly waitUntil?: (promise: PromiseLike<unknown>) => void,
+  ) {
     this.env = env;
     this.request = request;
   }
@@ -299,7 +305,13 @@ export abstract class ChatHandler {
       onError: (error) => this.handleError(error),
     });
 
-    return createUIMessageStreamResponse({ stream });
+    return createUIMessageStreamResponse({
+      stream,
+      // Read the stream to the end even if the browser disconnects, so the reply is still saved.
+      consumeSseStream: ({ stream }) => {
+        this.waitUntil?.(consumeStream({ stream }));
+      },
+    });
   }
 
   // Abstract methods to be implemented by subclasses
@@ -309,5 +321,5 @@ export abstract class ChatHandler {
   protected abstract executeChat(
     writer: UIMessageStreamWriter<CustomUIMessage>,
   ): Promise<void>;
-  protected abstract handleError(error: any): string;
+  protected abstract handleError(error: unknown): string;
 }
