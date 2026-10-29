@@ -55,9 +55,17 @@ export class TranscriptImport extends WorkflowEntrypoint<
           }
           folderName = folder.name;
 
-          const fetched = await fetchForSaving(
+          // Firecrawl sometimes renders a video page without its transcript, or
+          // gets an error page; retry a few times before reporting it as missing.
+          let fetched = await fetchForSaving(
             `https://www.youtube.com/watch?v=${videoId}`,
           );
+          for (let attempt = 2; attempt <= 3 && !fetched.ok; attempt++) {
+            await new Promise((resolve) => setTimeout(resolve, 15_000));
+            fetched = await fetchForSaving(
+              `https://www.youtube.com/watch?v=${videoId}`,
+            );
+          }
           if (!fetched.ok) {
             return { videoId, status: "skipped", reason: fetched.reason };
           }
