@@ -1,4 +1,4 @@
-import { type DocumentSource } from "../lib/tools/extract-from-documents.js";
+import { type extractFromDocumentsOutput } from "../lib/tools/extract-from-documents.js";
 import { type WebSource } from "../lib/tools/extract-from-web.js";
 import { type fetchWebContentOutput } from "../lib/tools/fetch-web-content.js";
 import {
@@ -7,6 +7,10 @@ import {
   type importYouTubeTranscriptsInput,
   type importYouTubeTranscriptsOutput,
 } from "../lib/tools/import-youtube-transcripts.js";
+import {
+  type readFileInput,
+  type readFileOutput,
+} from "../lib/tools/read-file.js";
 import {
   type saveToFolderInput,
   type saveToFolderOutput,
@@ -21,7 +25,11 @@ export type CustomUITools = {
   };
   extractFromDocuments: {
     input: { query: string; max_num_results?: number };
-    output: { extractedInformation: string; sources: DocumentSource[] };
+    output: z.infer<typeof extractFromDocumentsOutput>;
+  };
+  readFile: {
+    input: z.infer<typeof readFileInput>;
+    output: z.infer<typeof readFileOutput>;
   };
   createDocument: {
     input: { title: string; kind: ArtifactKind; description: string };

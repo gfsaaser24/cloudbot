@@ -26,6 +26,7 @@ import { createDocument } from "../tools/create-document.js";
 import { extractFromDocuments } from "../tools/extract-from-documents.js";
 import { extractFromWeb } from "../tools/extract-from-web.js";
 import { fetchWebContent } from "../tools/fetch-web-content.js";
+import { readFile } from "../tools/read-file.js";
 import {
   getImportStatus,
   importYouTubeTranscripts,
@@ -163,7 +164,7 @@ export class StandardChatHandler extends ChatHandler {
       ...(await this.composioTools()),
     };
 
-    // Only include extractFromDocuments if context filter has files or folders
+    // Only include extractFromDocuments and readFile if context filter has files or folders
     if (
       contextFilter &&
       ((contextFilter.files && contextFilter.files.length > 0) ||
@@ -255,6 +256,12 @@ export class StandardChatHandler extends ChatHandler {
         fileMetadata: authorizedFileMetadata,
         folderMetadata: authorizedFolderMetadata,
         dataStream: writer,
+      });
+      tools.readFile = readFile({
+        env: this.env,
+        userId: this.request.user.id,
+        fileMetadata: authorizedFileMetadata,
+        folderMetadata: authorizedFolderMetadata,
       });
     }
 

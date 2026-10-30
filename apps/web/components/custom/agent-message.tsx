@@ -19,6 +19,7 @@ import {
   ToolGenerateFile,
   ToolGetImportStatus,
   ToolImportYouTubeTranscripts,
+  ToolReadFile,
   ToolSaveToFolder,
   ToolUpdateDocument,
 } from "../tools";
@@ -167,6 +168,9 @@ export const AgentMessage = ({
 
                   case "tool-fetchWebContent":
                     return <ToolFetchWebContent key={index} part={part} />;
+
+                  case "tool-readFile":
+                    return <ToolReadFile key={index} part={part} />;
 
                   case "tool-saveToFolder":
                     return <ToolSaveToFolder key={index} part={part} />;

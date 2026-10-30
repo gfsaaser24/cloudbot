@@ -85,10 +85,7 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>().post(
       ranking_options: {
         score_threshold: 0.1,
       },
-      reranking: {
-        enabled: true,
-        model: "@cf/baai/bge-reranker-base",
-      },
+      // No reranking: bge-reranker-base dropped most natural-language questions.
       ...(metadataFilter && { filters: metadataFilter }),
     });
 
@@ -114,7 +111,7 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>().post(
     const context = searchResult.data
       .map((item, i) => {
         const { folderId, filename } = sources[i]!;
-        return `[${folderId}/${filename}]\n${item.content}`;
+        return `[${folderId}/${filename}]\n${item.content.map((c) => c.text).join("\n")}`;
       })
       .join("\n\n");
 
