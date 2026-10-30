@@ -7,7 +7,10 @@ import { documentSearchPrompt } from "../../providers/prompts.js";
 import { getModel } from "../../providers/providers.js";
 import { type Bindings } from "../../types/bindings.js";
 import { type CustomUIMessage } from "../../types/custom-ui-message.js";
-import { buildMetadataFilter } from "../../utils/build-metadata-filter.js";
+import {
+  buildMetadataFilter,
+  selectedFileKeys,
+} from "../../utils/build-metadata-filter.js";
 import { type FileMetadata } from "../../utils/filter-authorized-files.js";
 import { FolderMetadata } from "../../utils/filter-authorized-folders.js";
 
@@ -87,7 +90,13 @@ export const extractFromDocuments = ({
           ...(metadataFilter ? { filters: metadataFilter } : {}),
         });
 
-        const sources = searchResult.data.map((item) => {
+        // The filter narrows to folders; keep only the selected files, if any.
+        const fileKeys = selectedFileKeys(userId, fileMetadata);
+        const results = fileKeys
+          ? searchResult.data.filter((item) => fileKeys.has(item.filename))
+          : searchResult.data;
+
+        const sources = results.map((item) => {
           const parts = item.filename.split("/");
           return {
             folderId: parts[parts.length - 2] ?? "",
@@ -98,7 +107,7 @@ export const extractFromDocuments = ({
 
         logger.info(`Found ${sources.length} source(s) for query: "${query}"`);
 
-        const context = searchResult.data
+        const context = results
           .map((item, i) => {
             const { folderId, filename } = sources[i];
             return `[${folderId}/${filename}]\n${item.content}`;

@@ -14,73 +14,56 @@ type CompoundFilter = {
 
 type MetadataFilter = ComparisonFilter | CompoundFilter;
 
+// AI Search only indexes the first 64 bytes of a metadata string and rejects longer
+// filter values. Folder paths are made of ASCII ids ("<userId>/<folderId>/" is 74 bytes),
+// and the first 64 bytes still tell folders apart.
+const FILTERABLE_BYTES = 64;
+
+function folderPath(userId: string, visibility: string, folderId: string) {
+  const owner = visibility === "private" ? userId : visibility;
+  return `${owner}/${folderId}/`;
+}
+
+// The object key AI Search reports as a result's filename.
+function fileKey(userId: string, file: FileMetadata) {
+  return `${folderPath(userId, file.visibility, file.folderId)}${file.name}`;
+}
+
+// Full keys of the selected files, or undefined when no files were selected.
+// buildMetadataFilter can only narrow a search to the files' folders, so search
+// results have to be checked against these keys.
+export function selectedFileKeys(
+  userId: string,
+  fileMetadata: FileMetadata[],
+): Set<string> | undefined {
+  if (fileMetadata.length === 0) return undefined;
+  return new Set(fileMetadata.map((file) => fileKey(userId, file)));
+}
+
 export function buildMetadataFilter(
   userId: string,
   fileMetadata: FileMetadata[],
   folderMetadata: FolderMetadata[],
 ): MetadataFilter | undefined {
-  // If there are files, filter by filenames only
-  if (fileMetadata.length > 0) {
-    const filenames = fileMetadata.map((f) => {
-      if (f.visibility === "private") {
-        return `${userId}/${f.folderId}/${f.name}`;
-      }
-      return `${f.visibility}/${f.folderId}/${f.name}`;
-    });
+  // Selected files are searched through their folders (a full file key is too long to filter on).
+  const paths =
+    fileMetadata.length > 0
+      ? fileMetadata.map((f) => folderPath(userId, f.visibility, f.folderId))
+      : folderMetadata.map((f) => folderPath(userId, f.visibility, f.id));
 
-    // Single file - use simple eq filter
-    if (filenames.length === 1) {
-      return {
-        type: "eq",
-        key: "filename",
-        value: filenames[0],
-      };
-    }
+  const values = [
+    ...new Set(paths.map((path) => path.slice(0, FILTERABLE_BYTES))),
+  ];
 
-    // Multiple files - use or compound filter with eq operators
-    return {
-      type: "or",
-      filters: filenames.map((name) => ({
-        type: "eq",
-        key: "filename",
-        value: name,
-      })),
-    };
+  if (values.length === 0) return undefined;
+
+  if (values.length === 1) {
+    return { type: "eq", key: "folder", value: values[0]! };
   }
 
-  // If no files but there are folders, filter by folders
-  if (folderMetadata.length > 0) {
-    const folderPaths = folderMetadata.map((f) => {
-      if (f.visibility === "private") {
-        return `${userId}/${f.id}/`;
-      }
-      return `${f.visibility}/${f.id}/`;
-    });
-
-    // Single folder - use "starts with" filter pattern
-    if (folderPaths.length === 1) {
-      return {
-        type: "eq",
-        key: "folder",
-        value: folderPaths[0],
-      };
-    }
-
-    // Multiple folders - use or with multiple "starts with" patterns
-    // Note: This creates separate "starts with" filters for each folder,
-    // then combines them with OR logic
-    return {
-      type: "or",
-      filters: folderPaths.flatMap((folderPath) => [
-        {
-          type: "eq",
-          key: "folder",
-          value: folderPath,
-        },
-      ]),
-    };
-  }
-
-  // No files or folders provided
-  return undefined;
+  // "or" only allows eq filters on the same key.
+  return {
+    type: "or",
+    filters: values.map((value) => ({ type: "eq", key: "folder", value })),
+  };
 }
