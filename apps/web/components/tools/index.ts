@@ -6,5 +6,6 @@ export { ToolFetchWebContent } from "./fetch-web-content";
 export { ToolGenerateFile } from "./generate-file";
 export { ToolGetImportStatus } from "./get-import-status";
 export { ToolImportYouTubeTranscripts } from "./import-youtube-transcripts";
+export { ToolReadFile } from "./read-file";
 export { ToolSaveToFolder } from "./save-to-folder";
 export { ToolUpdateDocument } from "./update-document";

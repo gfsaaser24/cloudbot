@@ -1,10 +1,7 @@
 import * as z from "zod";
 
 import { createLogger } from "@workspace/server/logger/logger.js";
-import { generateText, tool, type UIMessageStreamWriter } from "ai";
-import { searchModelIdx } from "../../providers/models.js";
-import { documentSearchPrompt } from "../../providers/prompts.js";
-import { getModel } from "../../providers/providers.js";
+import { tool, type UIMessageStreamWriter } from "ai";
 import { type Bindings } from "../../types/bindings.js";
 import { type CustomUIMessage } from "../../types/custom-ui-message.js";
 import {
@@ -30,6 +27,29 @@ export type DocumentSource = {
 
 const logger = createLogger("extract-from-documents");
 
+const sourceSchema = z.object({
+  folderId: z.string(),
+  filename: z.string(),
+  score: z.number(),
+});
+
+export const extractFromDocumentsOutput = z.object({
+  // The matching passages, verbatim, for the chat model to read.
+  excerpts: z
+    .array(
+      z.object({
+        folderId: z.string(),
+        filename: z.string(),
+        score: z.number(),
+        text: z.string(),
+      }),
+    )
+    .optional(),
+  // Older messages carry a summary here instead of excerpts.
+  extractedInformation: z.string().optional(),
+  sources: z.array(sourceSchema),
+});
+
 export const extractFromDocuments = ({
   env,
   userId,
@@ -38,43 +58,27 @@ export const extractFromDocuments = ({
 }: ExtractFromDocumentsProps) =>
   tool({
     description:
-      "Extracts information from the user's document knowledge base by having an LLM read the documents and extract relevant information. You can make a search more extensive by increasing the max_num_results parameter.",
+      "Searches the user's documents (the selected folders or files) and returns the passages that best match the query, verbatim. Each passage is a section of a file, not the whole file. Search several times with different wording to cover a topic, and read whole files with readFile when a question needs a full document or many of them (e.g. themes across transcripts). Cite passages as [[doc:folderId/filename]].",
     inputSchema: z.object({
       query: z.string(),
-      max_num_results: z.number().min(2).max(8).default(4),
+      max_num_results: z.number().min(2).max(20).default(10),
     }),
-    outputSchema: z.object({
-      extractedInformation: z.string(),
-      sources: z.array(
-        z.object({
-          folderId: z.string(),
-          filename: z.string(),
-          score: z.number(),
-        }),
-      ),
-    }),
-    execute: async ({ query, max_num_results }) => {
+    outputSchema: extractFromDocumentsOutput,
+    execute: async ({
+      query,
+      max_num_results,
+    }): Promise<z.infer<typeof extractFromDocumentsOutput>> => {
       try {
         // Permissions already checked in standard-chat-handler
         // fileMetadata contains only files the user has access to
-
-        logger.debug("Building metadata filter for document search", {
-          userId,
-          fileMetadata,
-          folderMetadata,
-        });
-
         const metadataFilter = buildMetadataFilter(
           userId,
           fileMetadata,
           folderMetadata,
         );
 
-        logger.debug(
-          "Metadata filter for document search",
-          JSON.stringify(metadataFilter, null, 2),
-        );
-
+        // No reranking: bge-reranker-base scored most natural-language questions
+        // below the threshold, so searches came back empty.
         const searchResult = await env.AI.autorag(
           process.env.AUTORAG_NAME ?? "",
         ).search({
@@ -82,10 +86,6 @@ export const extractFromDocuments = ({
           max_num_results,
           ranking_options: {
             score_threshold: 0.2,
-          },
-          reranking: {
-            enabled: true,
-            model: "@cf/baai/bge-reranker-base",
           },
           ...(metadataFilter ? { filters: metadataFilter } : {}),
         });
@@ -96,32 +96,28 @@ export const extractFromDocuments = ({
           ? searchResult.data.filter((item) => fileKeys.has(item.filename))
           : searchResult.data;
 
-        const sources = results.map((item) => {
+        const excerpts = results.map((item) => {
           const parts = item.filename.split("/");
           return {
             folderId: parts[parts.length - 2] ?? "",
             filename: parts[parts.length - 1] ?? item.filename,
             score: item.score,
+            text: item.content.map((c) => c.text).join("\n"),
           };
         });
 
-        logger.info(`Found ${sources.length} source(s) for query: "${query}"`);
+        logger.info(
+          `Found ${excerpts.length} passage(s) for query: "${query}"`,
+        );
 
-        const context = results
-          .map((item, i) => {
-            const { folderId, filename } = sources[i];
-            return `[${folderId}/${filename}]\n${item.content}`;
-          })
-          .join("\n\n");
-
-        const config = await getModel(env, searchModelIdx);
-        const result = await generateText({
-          model: config.model,
-          system: documentSearchPrompt,
-          prompt: `Query: ${query}\n\nSources:\n${context}`,
-        });
-
-        return { extractedInformation: result.text, sources };
+        return {
+          excerpts,
+          sources: excerpts.map(({ folderId, filename, score }) => ({
+            folderId,
+            filename,
+            score,
+          })),
+        };
       } catch (error) {
         logger.error("Error in extractFromDocuments tool", error);
         throw error;

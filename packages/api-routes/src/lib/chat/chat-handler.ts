@@ -23,6 +23,7 @@ import { saveChat } from "../queries/chats.js";
 import { getLatestDocumentsByIds } from "../queries/documents.js";
 import { saveMessages } from "../queries/messages.js";
 import { type ChatRequest } from "./chat-request.js";
+import { omitDocumentText } from "./omit-document-text.js";
 
 const logger = createLogger("chat-handler");
 
@@ -103,7 +104,7 @@ export abstract class ChatHandler {
 
     await saveMessages({
       chatId: this.request.id,
-      newMessages: messages,
+      newMessages: messages.map(omitDocumentText),
     });
   }
 

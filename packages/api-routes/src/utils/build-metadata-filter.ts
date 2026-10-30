@@ -24,8 +24,11 @@ function folderPath(userId: string, visibility: string, folderId: string) {
   return `${owner}/${folderId}/`;
 }
 
-// The object key AI Search reports as a result's filename.
-function fileKey(userId: string, file: FileMetadata) {
+// The file's R2 object key, which AI Search reports as a result's filename.
+export function fileKey(
+  userId: string,
+  file: Pick<FileMetadata, "visibility" | "folderId" | "name">,
+) {
   return `${folderPath(userId, file.visibility, file.folderId)}${file.name}`;
 }
 

@@ -3,7 +3,10 @@ import * as z from "zod";
 import { tool } from "ai";
 import { artifactSchema } from "../../schemas/artifact-schema.js";
 import { createDocument } from "./create-document.js";
-import { extractFromDocuments } from "./extract-from-documents.js";
+import {
+  extractFromDocuments,
+  extractFromDocumentsOutput,
+} from "./extract-from-documents.js";
 import { extractFromWeb } from "./extract-from-web.js";
 import {
   fetchWebContent,
@@ -11,6 +14,7 @@ import {
   fetchWebContentOutput,
 } from "./fetch-web-content.js";
 import { generateFile } from "./generate-file.js";
+import { readFile, readFileInput, readFileOutput } from "./read-file.js";
 import {
   getImportStatus,
   getImportStatusInput,
@@ -29,6 +33,7 @@ import { updateDocument } from "./update-document.js";
 export const tools = {
   extractFromWeb: extractFromWeb,
   extractFromDocuments: extractFromDocuments,
+  readFile: readFile,
   createDocument: createDocument,
   updateDocument: updateDocument,
   generateFile: generateFile,
@@ -59,16 +64,11 @@ export const mockedTools = {
       query: z.string(),
       max_num_results: z.number().optional(),
     }),
-    outputSchema: z.object({
-      extractedInformation: z.string(),
-      sources: z.array(
-        z.object({
-          folderId: z.string(),
-          filename: z.string(),
-          score: z.number(),
-        }),
-      ),
-    }),
+    outputSchema: extractFromDocumentsOutput,
+  }),
+  readFile: tool({
+    inputSchema: readFileInput,
+    outputSchema: readFileOutput,
   }),
   createDocument: tool({
     inputSchema: z.object({
