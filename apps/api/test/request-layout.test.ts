@@ -7,7 +7,7 @@ import { extractFromWeb } from "@workspace/api-routes/lib/tools/extract-from-web
 import { type Bindings } from "@workspace/api-routes/types/bindings.js";
 import { type CustomUIMessage } from "@workspace/api-routes/types/custom-ui-message.js";
 import { generateText, type UIMessageStreamWriter } from "ai";
-import { MockLanguageModelV4 } from "ai/test";
+import { MockLanguageModelV4, simulateReadableStream } from "ai/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Follow-up turns only hit the prompt cache when everything before the new
@@ -18,29 +18,30 @@ const calls = vi.hoisted(() => ({
   saved: [] as unknown[],
 }));
 
+const { PROJECT_FOLDER, OTHER_FOLDER, PROMPT_ID } = vi.hoisted(() => ({
+  PROJECT_FOLDER: "00000000-0000-4000-8000-0000000000aa",
+  OTHER_FOLDER: "00000000-0000-4000-8000-0000000000bb",
+  PROMPT_ID: "00000000-0000-4000-8000-0000000000cc",
+}));
+
 const chatModel = new MockLanguageModelV4({
   doStream: async (options) => {
     calls.model.push(options);
     return {
-      stream: new ReadableStream({
-        start(controller) {
-          for (const chunk of [
-            { type: "text-start", id: "t" },
-            { type: "text-delta", id: "t", delta: "ok" },
-            { type: "text-end", id: "t" },
-            {
-              type: "finish",
-              finishReason: { unified: "stop", raw: "stop" },
-              usage: {
-                inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
-                outputTokens: { total: 1, text: 1, reasoning: 0 },
-              },
+      stream: simulateReadableStream({
+        chunks: [
+          { type: "text-start", id: "t" },
+          { type: "text-delta", id: "t", delta: "ok" },
+          { type: "text-end", id: "t" },
+          {
+            type: "finish",
+            finishReason: { unified: "stop", raw: "stop" },
+            usage: {
+              inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+              outputTokens: { total: 1, text: 1, reasoning: 0 },
             },
-          ] as const) {
-            controller.enqueue(chunk);
-          }
-          controller.close();
-        },
+          },
+        ],
       }),
     };
   },
@@ -91,10 +92,6 @@ vi.mock("@workspace/server/drizzle/db.js", () => ({
 vi.mock("@workspace/api-routes/utils/filter-authorized-folders.js", () => ({
   filterAuthorizedFolders: async (folders: unknown[]) => folders,
 }));
-
-const PROJECT_FOLDER = "00000000-0000-4000-8000-0000000000aa";
-const OTHER_FOLDER = "00000000-0000-4000-8000-0000000000bb";
-const PROMPT_ID = "00000000-0000-4000-8000-0000000000cc";
 
 type Selection = { folders?: string[]; prompts?: string[] };
 
@@ -151,6 +148,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 describe("request layout across turns", () => {
@@ -249,7 +247,6 @@ describe("prompt caching settings", () => {
 
     const config = await getModel({} as Bindings, modelId, { sessionId: "chat-1" });
     await generateText({ model: config.model, providerOptions: config.providerOptions, prompt: "hi" });
-    vi.unstubAllGlobals();
     return bodies[0]!;
   }
 

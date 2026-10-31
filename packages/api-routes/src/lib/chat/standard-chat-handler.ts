@@ -66,7 +66,7 @@ export class StandardChatHandler extends ChatHandler {
   }
 
   // The same on every turn, so the provider can reuse its cached prompt.
-  private buildInstructions(): string {
+  private buildSystemPrompt(): string {
     return isComposioConfigured()
       ? this.systemPrompt + composioPrompt
       : this.systemPrompt;
@@ -284,9 +284,10 @@ export class StandardChatHandler extends ChatHandler {
       enabled: Boolean(this.request.webSearchEnabled),
     });
 
-    // A fixed order, so the same tools always produce the same request.
+    // A fixed order, so the same tools always produce the same request. A plain
+    // comparison, since locale-aware ordering can vary between runtimes.
     return Object.fromEntries(
-      Object.entries(tools).sort(([a], [b]) => a.localeCompare(b)),
+      Object.entries(tools).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
     );
   }
 
@@ -309,9 +310,8 @@ export class StandardChatHandler extends ChatHandler {
       await this.saveUserMessage();
     }
 
-    const instructions = this.buildInstructions();
     const streamConfig = await this.buildStreamTextConfig({
-      systemPrompt: instructions,
+      systemPrompt: this.buildSystemPrompt(),
     });
     const tools = await this.retrieveToolSet(writer);
 
