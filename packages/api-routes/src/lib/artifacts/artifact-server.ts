@@ -17,6 +17,7 @@ import { type UIMessageStreamWriter } from "ai";
 import { type ArtifactKind } from "../../schemas/artifact-schema.js";
 import { type Bindings } from "../../types/bindings.js";
 import { type CustomUIMessage } from "../../types/custom-ui-message.js";
+import { type TurnSpend } from "../chat/stop-conditions.js";
 import { saveDiff, saveDocument } from "../queries/documents.js";
 import { codeDocumentHandler } from "./code-server.js";
 // import { sheetDocumentHandler } from "./sheet-server.js";
@@ -37,6 +38,8 @@ export type CreateDocumentCallbackProps = {
   dataStream: UIMessageStreamWriter<CustomUIMessage>;
   userId: string;
   env: Bindings;
+  // The turn's spend, which the document's model call adds to.
+  spend: TurnSpend;
 };
 
 export type UpdateDocumentCallbackProps = {
@@ -45,6 +48,8 @@ export type UpdateDocumentCallbackProps = {
   dataStream: UIMessageStreamWriter<CustomUIMessage>;
   userId: string;
   env: Bindings;
+  // The turn's spend, which the document's model call adds to.
+  spend: TurnSpend;
 };
 
 export type DocumentHandler<T = ArtifactKind> = {
@@ -68,6 +73,7 @@ export function createDocumentHandler<T extends ArtifactKind>(config: {
         dataStream: args.dataStream,
         userId: args.userId,
         env: args.env,
+        spend: args.spend,
       });
 
       if (args.userId) {
@@ -89,6 +95,7 @@ export function createDocumentHandler<T extends ArtifactKind>(config: {
         dataStream: args.dataStream,
         userId: args.userId,
         env: args.env,
+        spend: args.spend,
       });
 
       const diffId = await saveDiff({

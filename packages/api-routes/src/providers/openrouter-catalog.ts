@@ -1,6 +1,7 @@
 import { OpenRouterCore } from "@openrouter/sdk/core.js";
 import { modelsList } from "@openrouter/sdk/funcs/modelsList.js";
-import { type Model } from "@openrouter/sdk/models";
+import { Model$inboundSchema, type Model } from "@openrouter/sdk/models/model.js";
+import { ResponseValidationError } from "@openrouter/sdk/models/errors/responsevalidationerror.js";
 
 // The chat model menu lists every OpenRouter model that supports tool calling
 // (the chat always sends tools, and the AI SDK sends tool_choice with them).
@@ -24,6 +25,10 @@ const CACHE_TTL_MS = 60 * 60 * 1000;
 // Every chat turn waits for the catalog, so a slow models endpoint must not
 // hold it up for long.
 const FETCH_TIMEOUT_MS = 5_000;
+// The endpoint's own page size, and a bound in case it ever ignores offset
+// (OpenRouter lists a few hundred models).
+const PAGE_SIZE = 500;
+const MAX_PAGES = 20;
 
 let cache: { models: CatalogModel[]; fetchedAt: number } | null = null;
 
@@ -32,6 +37,26 @@ function shortDescription(description = ""): string {
   return firstSentence.length > 140
     ? `${firstSentence.slice(0, 137)}...`
     : firstSentence;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+// A page the SDK rejected, entry by entry. The SDK validates a page as a whole,
+// so one model listed in a shape it doesn't expect would otherwise fail the
+// whole catalog; this way only that model is left out. When no entry matches,
+// the SDK no longer fits the endpoint, and the error stands so the stale
+// catalog is served.
+function validModels(error: unknown): { models: Model[]; listed: number } {
+  const raw = error instanceof ResponseValidationError ? error.rawValue : undefined;
+  const entries = isRecord(raw) && isRecord(raw.Result) ? raw.Result.data : undefined;
+  if (!Array.isArray(entries)) throw error;
+  const models = entries.flatMap((entry) => {
+    const parsed = Model$inboundSchema.safeParse(entry);
+    return parsed.success ? [parsed.data] : [];
+  });
+  if (entries.length > 0 && models.length === 0) throw error;
+  return { models, listed: entries.length };
 }
 
 // Every model in OpenRouter's catalog, through its typed client SDK. The
@@ -44,9 +69,13 @@ async function fetchModels(): Promise<Model[]> {
     retryConfig: { strategy: "none" },
   });
   const models: Model[] = [];
-  for await (const page of await modelsList(client)) {
-    if (!page.ok) throw page.error;
-    models.push(...page.value.result.data);
+  for (let pageIndex = 0; pageIndex < MAX_PAGES; pageIndex++) {
+    const page = await modelsList(client, { offset: pageIndex * PAGE_SIZE, limit: PAGE_SIZE });
+    const { models: found, listed } = page.ok
+      ? { models: page.value.result.data, listed: page.value.result.data.length }
+      : validModels(page.error);
+    models.push(...found);
+    if (listed < PAGE_SIZE) break;
   }
   return models;
 }

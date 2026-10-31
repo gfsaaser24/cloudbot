@@ -12,7 +12,7 @@ const FOLDER = "00000000-0000-4000-8000-0000000000aa";
 
 const state = vi.hoisted(() => ({
   // The files the folder query finds, and how many the count query reports.
-  rows: [] as { name: string; visibility: string; folderId: string }[],
+  rows: [] as { name: string; visibility: string; folderId: string; size: number }[],
   total: 0,
   // Files whose extraction fails.
   failing: new Set<string>(),
@@ -21,6 +21,9 @@ const state = vi.hoisted(() => ({
   // The folder query's where clause, and how many extraction calls ran.
   where: undefined as unknown,
   modelCalls: 0,
+  // How many extractions run at once, and the most that did.
+  active: 0,
+  maxActive: 0,
 }));
 
 vi.mock("@workspace/server/drizzle/db.js", () => ({
@@ -30,7 +33,12 @@ vi.mock("@workspace/server/drizzle/db.js", () => ({
         where: (where: unknown) =>
           ((state.where = where), "total" in columns)
             ? Promise.resolve([{ total: state.total }])
-            : { orderBy: () => ({ limit: async (n: number) => state.rows.slice(0, n) }) },
+            : {
+                orderBy: () => ({ limit: async (n: number) => state.rows.slice(0, n) }),
+                // The selected files' sizes.
+                then: (resolve: (rows: unknown) => void) =>
+                  resolve(state.rows.map((r) => ({ id: r.name, size: r.size }))),
+              },
       }),
     }),
   }),
@@ -44,6 +52,10 @@ vi.mock("@workspace/api-routes/providers/providers.js", async (importActual) => 
     new MockLanguageModelV4({
       doGenerate: async ({ prompt }) => {
         state.modelCalls += 1;
+        state.active += 1;
+        state.maxActive = Math.max(state.maxActive, state.active);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        state.active -= 1;
         const text = JSON.stringify(prompt);
         const filename = /Document \\"([^"\\]+)\\"/.exec(text)?.[1] ?? "?";
         if (state.failing.has(filename)) throw new Error("model error");
@@ -66,7 +78,12 @@ vi.mock("@workspace/api-routes/providers/providers.js", async (importActual) => 
     }),
 }));
 
-const transcript = (i: number) => ({ name: `episode-${String(i).padStart(3, "0")}.md`, visibility: "private", folderId: FOLDER });
+const transcript = (i: number, size = 1_000) => ({
+  name: `episode-${String(i).padStart(3, "0")}.md`,
+  visibility: "private",
+  folderId: FOLDER,
+  size,
+});
 
 const bucket = {
   get: async (key: string) => ({ text: async () => `Transcript of ${key}` }),
@@ -109,6 +126,8 @@ beforeEach(() => {
   state.valueLength = 0;
   state.where = undefined;
   state.modelCalls = 0;
+  state.active = 0;
+  state.maxActive = 0;
 });
 
 describe("analyzeFolder", () => {
@@ -153,6 +172,29 @@ describe("analyzeFolder", () => {
     const { outputs } = await run();
     expect(outputs.map((o) => o.completed)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
     expect(outputs.filter((o) => o.status === "running")).toHaveLength(11);
+  });
+
+  it("reads 8 small files at once, but large files one at a time", async () => {
+    state.rows = Array.from({ length: 12 }, (_, i) => transcript(i + 1));
+    state.total = 12;
+    await run();
+    expect(state.maxActive).toBe(8);
+
+    state.maxActive = 0;
+    state.rows = Array.from({ length: 4 }, (_, i) => transcript(i + 1, 20 * 1024 * 1024));
+    state.total = 4;
+    const { final } = await run();
+    expect(state.maxActive).toBe(1);
+    expect(final.rows).toHaveLength(4);
+  });
+
+  it("weighs selected files by their stored size", async () => {
+    state.rows = Array.from({ length: 3 }, (_, i) => transcript(i + 1, 20 * 1024 * 1024));
+    const selected = state.rows.map((r) => ({ id: r.name, ...r, owner: "user-1" }));
+
+    const { final } = await run({ selectedFiles: selected });
+    expect(state.maxActive).toBe(1);
+    expect(final.rows).toHaveLength(3);
   });
 
   it("doesn't analyze a file outside the selection", async () => {

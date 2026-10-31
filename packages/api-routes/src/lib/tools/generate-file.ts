@@ -7,6 +7,7 @@ import { getModel } from "../../providers/providers.js";
 import { type Bindings } from "../../types/bindings.js";
 import { type CustomUIMessage } from "../../types/custom-ui-message.js";
 import { generateUUID } from "../../utils/generate-uuid.js";
+import { callCost, type TurnSpend } from "../chat/stop-conditions.js";
 
 const fileFormats = [
   "html",
@@ -91,11 +92,13 @@ type GenerateFileProps = {
   userId: string;
   dataStream: UIMessageStreamWriter<CustomUIMessage>;
   env: Bindings;
+  // The turn's spend, which the generating model call adds to.
+  spend: TurnSpend;
 };
 
 const logger = createLogger("generate-file");
 
-export const generateFile = ({ userId, dataStream, env }: GenerateFileProps) =>
+export const generateFile = ({ userId, dataStream, env, spend }: GenerateFileProps) =>
   tool({
     description:
       `Generate a downloadable file in a specified format. Supported formats: ${fileFormats.join(", ")}. ` +
@@ -141,6 +144,8 @@ export const generateFile = ({ userId, dataStream, env }: GenerateFileProps) =>
           instructions: buildSystemPrompt(format),
           prompt: `Generate a ${format.toUpperCase()} file titled "${title}".\n\nRequirements:\n${description}`,
         });
+
+        spend.tools += callCost(result.providerMetadata);
 
         const content = result.text;
 

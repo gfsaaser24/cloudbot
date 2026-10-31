@@ -1,15 +1,41 @@
 import { firecrawlInputs, firecrawlTools } from "@workspace/api-routes/lib/tools/firecrawl-tools.js";
 import { type Bindings } from "@workspace/api-routes/types/bindings.js";
+import { type SQL } from "drizzle-orm";
+import { SQLiteSyncDialect } from "drizzle-orm/sqlite-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Every Firecrawl v2 capability is a tool. Costly ones ask first and run under
 // caps, and every result is kept small enough to stay in the history for good.
 
-// The selected-file lookup reads the files table.
+// The selected-file lookup reads the files table; jobs and browser sessions
+// are recorded with the user who started them.
 const filesTable = vi.hoisted(() => ({ rows: [] as { name: string; visibility: string; folderId: string }[] }));
+const jobsTable = vi.hoisted(() => ({ rows: [] as { id: string; userId: string; kind: string }[], insertFails: false }));
 
 vi.mock("@workspace/server/drizzle/db.js", () => ({
-  db: () => ({ select: () => ({ from: () => ({ where: async () => filesTable.rows }) }) }),
+  db: () => ({
+    select: () => ({
+      from: () => ({
+        where: (where: SQL) => ({
+          then: (resolve: (rows: unknown) => void) => resolve(filesTable.rows),
+          // The job lookup: the rows whose id, owner and kind match, in that order.
+          limit: async () => {
+            const { sql, params } = new SQLiteSyncDialect().sqlToQuery(where);
+            expect(sql).toMatch(/"id" = \?.*"user_id" = \?.*"kind" = \?/);
+            return jobsTable.rows.filter(
+              (job) => job.id === params[0] && job.userId === params[1] && job.kind === params[2],
+            );
+          },
+        }),
+      }),
+    }),
+    insert: () => ({
+      values: async (job: { id: string; userId: string; kind: string }) => {
+        if (jobsTable.insertFails) throw new Error("D1 unavailable");
+        jobsTable.rows.push(job);
+      },
+    }),
+  }),
 }));
 
 type Call = { method: string; url: URL; body: unknown; auth: string | null };
@@ -19,6 +45,8 @@ let respond: (call: Call) => Response = () => Response.json({ success: true });
 
 beforeEach(() => {
   calls = [];
+  jobsTable.rows = [];
+  jobsTable.insertFails = false;
   vi.stubEnv("FIRECRAWL_API_KEY", "fc-test");
   vi.stubGlobal("fetch", async (input: URL | string, init: RequestInit = {}) => {
     const call: Call = {
@@ -37,8 +65,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const tools = (enabled = true) =>
-  firecrawlTools({ env: {} as Bindings, userId: "user-1", enabled, fileMetadata: [], folderMetadata: [] });
+const tools = (enabled = true, userId = "user-1") =>
+  firecrawlTools({ env: {} as Bindings, userId, enabled, fileMetadata: [], folderMetadata: [] });
 
 const options = { toolCallId: "c1", messages: [] };
 
@@ -90,8 +118,10 @@ describe("firecrawl tools", () => {
         : Response.json({ success: true, result: "Logged in", exitCode: 0 });
     const interact = tools().firecrawlInteract;
 
+    // Every start and every piece of code run asks first; stopping doesn't.
     expect(typeof interact.needsApproval === "function" && (await interact.needsApproval({ action: "start" }, options))).toBe(true);
-    expect(typeof interact.needsApproval === "function" && (await interact.needsApproval({ action: "execute", sessionId: "sess-1" }, options))).toBe(false);
+    expect(typeof interact.needsApproval === "function" && (await interact.needsApproval({ action: "execute", sessionId: "sess-1" }, options))).toBe(true);
+    expect(typeof interact.needsApproval === "function" && (await interact.needsApproval({ action: "stop", sessionId: "sess-1" }, options))).toBe(false);
 
     const started = await interact.execute!({ action: "start" }, options);
     expect(started).toMatchObject({ id: "sess-1", liveViewUrl: "https://live/sess-1" });
@@ -103,6 +133,67 @@ describe("firecrawl tools", () => {
     await interact.execute!({ action: "stop", sessionId: started.id }, options);
     expect(calls[2]).toMatchObject({ method: "DELETE" });
     expect(calls[2]!.url.pathname).toBe("/v2/interact/sess-1");
+  });
+
+  it("doesn't let another user use a browser session", async () => {
+    respond = () => Response.json({ success: true, id: "sess-1" });
+    await tools().firecrawlInteract.execute!({ action: "start" }, options);
+
+    const other = tools(true, "user-2").firecrawlInteract;
+    const ran = await other.execute!({ action: "execute", sessionId: "sess-1", code: "await page.content()" }, options);
+    const stopped = await other.execute!({ action: "stop", sessionId: "sess-1" }, options);
+
+    expect([ran.ok, stopped.ok]).toEqual([false, false]);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("doesn't show or cancel another user's crawl", async () => {
+    respond = () => Response.json({ success: true, id: "crawl-1" });
+    await tools().firecrawlCrawl.execute!({ url: "https://a.com", limit: 10 }, options);
+
+    const other = tools(true, "user-2").firecrawlJobStatus;
+    const status = await other.execute!({ kind: "crawl", id: "crawl-1", action: "status" }, options);
+    const cancelled = await other.execute!({ kind: "crawl", id: "crawl-1", action: "cancel" }, options);
+    // The id is the user's, but not as a different kind of job.
+    const asAgent = await tools().firecrawlJobStatus.execute!({ kind: "agent", id: "crawl-1", action: "status" }, options);
+
+    expect([status.ok, cancelled.ok, asAgent.ok]).toEqual([false, false, false]);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("lets the user check their own batch scrapes and agent jobs", async () => {
+    respond = ({ method, url }) =>
+      method === "POST" ? Response.json({ success: true, id: url.pathname.endsWith("/agent") ? "agent-1" : "batch-1" }) : Response.json({ status: "completed", data: [] });
+    await tools().firecrawlBatchScrape.execute!({ urls: ["https://a.com"] }, options);
+    await tools().firecrawlAgent.execute!({ prompt: "find the founders", maxCredits: 10 }, options);
+
+    const batch = await tools().firecrawlJobStatus.execute!({ kind: "batchScrape", id: "batch-1", action: "status" }, options);
+    const agent = await tools().firecrawlJobStatus.execute!({ kind: "agent", id: "agent-1", action: "status" }, options);
+
+    expect([batch.ok, agent.ok]).toEqual([true, true]);
+    expect(calls.map((c) => c.url.pathname)).toEqual(["/v2/batch/scrape", "/v2/agent", "/v2/batch/scrape/batch-1", "/v2/agent/agent-1"]);
+  });
+
+  it("cancels a job it couldn't record, since nobody could reach it", async () => {
+    respond = () => Response.json({ success: true, id: "crawl-1" });
+    jobsTable.insertFails = true;
+
+    const output = await tools().firecrawlCrawl.execute!({ url: "https://a.com", limit: 10 }, options);
+
+    expect(output.ok).toBe(false);
+    expect(calls.map((c) => `${c.method} ${c.url.pathname}`)).toEqual(["POST /v2/crawl", "DELETE /v2/crawl/crawl-1"]);
+  });
+
+  it("says a job it couldn't record or cancel may still be running, and names it", async () => {
+    respond = ({ method }) =>
+      method === "DELETE" ? new Response("unavailable", { status: 503 }) : Response.json({ success: true, id: "crawl-1" });
+    jobsTable.insertFails = true;
+
+    const output = await tools().firecrawlCrawl.execute!({ url: "https://a.com", limit: 10 }, options);
+
+    expect(output).toMatchObject({ ok: false, id: "crawl-1" });
+    expect(output.summary).toMatch(/may still be running/);
+    expect(output.summary).not.toMatch(/so it was cancelled/);
   });
 
   it("tells the model Firecrawl is out of credits instead of failing", async () => {
@@ -119,6 +210,7 @@ describe("firecrawl tools", () => {
       metadata: { sourceURL: `https://a.com/${i}`, title: `Page ${i}` },
     });
     respond = () => Response.json({ status: "completed", total: 100, completed: 100, data: Array.from({ length: 100 }, (_, i) => page(i)) });
+    jobsTable.rows = [{ id: "crawl-1", userId: "user-1", kind: "crawl" }];
 
     const output = await tools().firecrawlJobStatus.execute!({ kind: "crawl", id: "crawl-1", action: "status" }, options);
     expect(JSON.stringify(output).length).toBeLessThan(100_000 + 5_000);
