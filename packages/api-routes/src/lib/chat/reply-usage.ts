@@ -1,17 +1,20 @@
 import { type LanguageModelUsage } from "ai";
+import * as z from "zod";
 
 // What one reply used: tokens from every step of the turn, and what it cost,
 // including model calls made by tools (analyzeFolder's per-file reads).
 // Shared with the web app, which shows it under the reply.
 
-export type ReplyUsage = {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  reasoningTokens: number;
-  costUsd: number;
-};
+export const replyUsageSchema = z.object({
+  inputTokens: z.number(),
+  outputTokens: z.number(),
+  cacheReadTokens: z.number(),
+  cacheWriteTokens: z.number(),
+  reasoningTokens: z.number(),
+  costUsd: z.number(),
+});
+
+export type ReplyUsage = z.infer<typeof replyUsageSchema>;
 
 export function replyUsage(
   total: LanguageModelUsage,

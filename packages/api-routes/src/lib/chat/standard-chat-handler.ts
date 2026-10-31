@@ -378,7 +378,9 @@ export class StandardChatHandler extends ChatHandler {
     // Finish generating even if the client disconnects, so the reply isn't lost.
     this.waitUntil?.(result.consumeStream());
 
-    let stepsCost = 0;
+    // Summed here as steps finish: the turn limits' spend.steps is refreshed
+    // before each step, so it never includes the last one.
+    let finishedStepsCost = 0;
     writer.merge(
       toUIMessageStream<typeof tools, CustomUIMessage>({
         stream: result.stream,
@@ -390,12 +392,15 @@ export class StandardChatHandler extends ChatHandler {
         },
         messageMetadata: ({ part }) => {
           if (part.type === "finish-step") {
-            stepsCost += callCost(part.providerMetadata);
+            finishedStepsCost += callCost(part.providerMetadata);
           }
           // Tokens and cost of the whole turn, including tools' model calls.
           if (part.type === "finish") {
             return {
-              usage: replyUsage(part.totalUsage, stepsCost + this.spend.tools),
+              usage: replyUsage(
+                part.totalUsage,
+                finishedStepsCost + this.spend.tools,
+              ),
             };
           }
         },

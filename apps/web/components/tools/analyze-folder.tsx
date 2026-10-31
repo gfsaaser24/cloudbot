@@ -27,7 +27,7 @@ export function ToolAnalyzeFolder({ part }: ToolAnalyzeFolderProps) {
           {fields.join(", ")}
         </div>
       )}
-      {running && output && (
+      {running && (
         <div className="mt-2 space-y-1">
           <div className="text-sm">
             Reading {output.completed} of {output.total} files
