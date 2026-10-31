@@ -20,16 +20,17 @@ import {
   updateDocumentPrompt,
 } from "../../providers/prompts.js";
 import { getModel } from "../../providers/providers.js";
+import { callCost } from "../chat/stop-conditions.js";
 import { createDocumentHandler } from "./artifact-server.js";
 
 export const codeDocumentHandler = createDocumentHandler<"code">({
   kind: "code",
-  onCreateDocument: async ({ title, description, dataStream, env }) => {
+  onCreateDocument: async ({ title, description, dataStream, env, spend }) => {
     let draftContent = "";
 
     const config = await getModel(env, artifactModelIdx);
 
-    const { stream } = streamText({
+    const { stream, providerMetadata } = streamText({
       model: config.model,
       instructions: createDocumentPrompt("code"),
       prompt: description ? `${title}\n\n${description}` : title,
@@ -52,9 +53,10 @@ export const codeDocumentHandler = createDocumentHandler<"code">({
       }
     }
 
+    spend.tools += callCost(await providerMetadata);
     return stripCodeFences(draftContent);
   },
-  onUpdateDocument: async ({ document, description, dataStream, env }) => {
+  onUpdateDocument: async ({ document, description, dataStream, env, spend }) => {
     if (!document.content)
       throw new HTTPException(500, { message: "INTERNAL_SERVER_ERROR" });
 
@@ -62,7 +64,7 @@ export const codeDocumentHandler = createDocumentHandler<"code">({
 
     const config = await getModel(env, artifactModelIdx);
 
-    const { stream } = streamText({
+    const { stream, providerMetadata } = streamText({
       model: config.model,
       instructions: updateDocumentPrompt(document.content, "code"),
       prompt: description,
@@ -85,6 +87,7 @@ export const codeDocumentHandler = createDocumentHandler<"code">({
       }
     }
 
+    spend.tools += callCost(await providerMetadata);
     return stripCodeFences(draftContent);
   },
 });

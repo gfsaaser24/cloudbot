@@ -353,3 +353,19 @@ export const prompts = sqliteTable("prompts", {
 });
 
 export type Prompt = InferSelectModel<typeof prompts>;
+
+// Firecrawl jobs and browser sessions a user started. Every CloudChat user
+// shares one Firecrawl account, so a job or session is only reachable by the
+// user who started it.
+export const firecrawlJobs = sqliteTable("firecrawl_jobs", {
+  id: text("id").primaryKey().notNull(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  kind: text("kind", {
+    enum: ["crawl", "batchScrape", "agent", "interact"],
+  }).notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" })
+    .notNull()
+    .default(sql`(unixepoch() * 1000)`),
+});

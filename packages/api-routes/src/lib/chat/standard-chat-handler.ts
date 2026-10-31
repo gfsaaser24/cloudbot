@@ -175,16 +175,19 @@ export class StandardChatHandler extends ChatHandler {
         env: this.env,
         userId: this.request.user.id,
         dataStream: writer,
+        spend: this.spend,
       }),
       updateDocument: updateDocument({
         env: this.env,
         userId: this.request.user.id,
         dataStream: writer,
+        spend: this.spend,
       }),
       generateFile: generateFile({
         env: this.env,
         userId: this.request.user.id,
         dataStream: writer,
+        spend: this.spend,
       }),
       saveToFolder: saveToFolder({
         env: this.env,

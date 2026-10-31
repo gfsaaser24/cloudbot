@@ -18,6 +18,7 @@ import { z } from "zod";
 import { artifactSchema } from "../../schemas/artifact-schema.js";
 import { type Bindings } from "../../types/bindings.js";
 import { type CustomUIMessage } from "../../types/custom-ui-message.js";
+import { type TurnSpend } from "../chat/stop-conditions.js";
 import { generateUUID } from "../../utils/generate-uuid.js";
 import {
   artifactKinds,
@@ -28,6 +29,8 @@ type CreateDocumentProps = {
   userId: string;
   dataStream: UIMessageStreamWriter<CustomUIMessage>;
   env: Bindings;
+  // The turn's spend, which the generating model call adds to.
+  spend: TurnSpend;
 };
 
 const logger = createLogger("create-document");
@@ -36,6 +39,7 @@ export const createDocument = ({
   userId,
   dataStream,
   env,
+  spend,
 }: CreateDocumentProps) =>
   tool({
     description:
@@ -89,6 +93,7 @@ export const createDocument = ({
           dataStream,
           userId,
           env,
+          spend,
         });
 
         dataStream.write({

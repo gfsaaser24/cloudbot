@@ -1,4 +1,8 @@
+import { db } from "@workspace/server/drizzle/db.js";
+import { firecrawlJobs } from "@workspace/server/drizzle/schema.js";
+import { createLogger } from "@workspace/server/logger/logger.js";
 import { tool } from "ai";
+import { and, eq } from "drizzle-orm";
 import * as z from "zod";
 import { type Bindings } from "../../types/bindings.js";
 import { fileKey } from "../../utils/build-metadata-filter.js";
@@ -47,6 +51,36 @@ export type FirecrawlOutput = z.infer<typeof firecrawlOutput>;
 
 // Ids go into URL paths, so only plain ids are accepted.
 const jobId = z.string().regex(/^[\w-]{1,100}$/, "Not a Firecrawl id");
+
+// Every CloudChat user shares one Firecrawl account, so each job and browser
+// session is recorded with the user who started it, and only that user can
+// check, cancel or use it.
+type JobKind = (typeof firecrawlJobs.kind.enumValues)[number];
+
+const logger = createLogger("firecrawl-tools");
+
+// Records a job or session that just started. If the record can't be saved,
+// nobody could reach the job to check or stop it, so it is cancelled and the
+// failure returned.
+async function recordJob(userId: string, kind: JobKind, id: string): Promise<FirecrawlOutput | undefined> {
+  try {
+    await db().insert(firecrawlJobs).values({ id, userId, kind });
+    return undefined;
+  } catch (error) {
+    logger.error("Could not record a Firecrawl job", { kind, id, error });
+    await firecrawlRequest("DELETE", kind === "interact" ? `/interact/${id}` : `${JOB_PATH[kind]}/${id}`);
+    return failed("The job couldn't be recorded, so it was cancelled. Try again.");
+  }
+}
+
+async function ownsJob(userId: string, kind: JobKind, id: string) {
+  const [job] = await db()
+    .select({ id: firecrawlJobs.id })
+    .from(firecrawlJobs)
+    .where(and(eq(firecrawlJobs.id, id), eq(firecrawlJobs.userId, userId), eq(firecrawlJobs.kind, kind)))
+    .limit(1);
+  return job !== undefined;
+}
 
 function clip(text: string | undefined, max: number): string {
   if (!text) return "";
@@ -674,6 +708,8 @@ export function firecrawlTools({ env, userId, enabled, fileMetadata, folderMetad
           },
         });
         if (!result.ok) return failed(result.error);
+        const unrecorded = await recordJob(userId, "crawl", result.data.id);
+        if (unrecorded) return unrecorded;
         return {
           ok: true,
           id: result.data.id,
@@ -695,6 +731,8 @@ export function firecrawlTools({ env, userId, enabled, fileMetadata, folderMetad
           body: { urls, formats: ["markdown"], onlyMainContent: input.onlyMainContent ?? true },
         });
         if (!result.ok) return failed(result.error);
+        const unrecorded = await recordJob(userId, "batchScrape", result.data.id);
+        if (unrecorded) return unrecorded;
         const dropped = input.urls.length - urls.length;
         return {
           ok: true,
@@ -717,6 +755,8 @@ export function firecrawlTools({ env, userId, enabled, fileMetadata, folderMetad
           body: { ...input, maxCredits },
         });
         if (!result.ok) return failed(result.error);
+        const unrecorded = await recordJob(userId, "agent", result.data.id);
+        if (unrecorded) return unrecorded;
         return {
           ok: true,
           id: result.data.id,
@@ -733,6 +773,7 @@ export function firecrawlTools({ env, userId, enabled, fileMetadata, folderMetad
       outputSchema: firecrawlOutput,
       execute: async ({ kind, id, action }): Promise<FirecrawlOutput> => {
         if (!enabled) return WEB_OFF;
+        if (!(await ownsJob(userId, kind, id))) return failed(`No ${kind} job with that id.`);
         const path = `${JOB_PATH[kind]}/${id}`;
 
         if (action === "cancel") {
@@ -778,10 +819,10 @@ export function firecrawlTools({ env, userId, enabled, fileMetadata, folderMetad
 
     firecrawlInteract: tool({
       description:
-        "Controls a live browser session: start one (asks the user to approve first), execute code in it (Playwright in node by default) to click, type, log in or read the page, then stop it. Pass the sessionId from start to every later call.",
+        "Controls a live browser session: start one, execute code in it (Playwright in node by default) to click, type, log in or read the page, then stop it. Starting a session and every execute ask the user to approve first. Pass the sessionId from start to every later call.",
       inputSchema: firecrawlInputs.firecrawlInteract,
       outputSchema: firecrawlOutput,
-      needsApproval: ({ action }) => enabled && action === "start",
+      needsApproval: ({ action }) => enabled && action !== "stop",
       execute: async (input): Promise<FirecrawlOutput> => {
         if (!enabled) return WEB_OFF;
 
@@ -792,6 +833,8 @@ export function firecrawlTools({ env, userId, enabled, fileMetadata, folderMetad
             expiresAt?: string;
           }>("POST", "/interact", { body: { ttl: input.ttlSeconds ?? DEFAULT_SESSION_SECONDS } });
           if (!result.ok) return failed(result.error);
+          const unrecorded = await recordJob(userId, "interact", result.data.id);
+          if (unrecorded) return unrecorded;
           return {
             ok: true,
             id: result.data.id,
@@ -802,6 +845,9 @@ export function firecrawlTools({ env, userId, enabled, fileMetadata, folderMetad
         }
 
         if (!input.sessionId) return failed("This action needs the sessionId from the start call.");
+        if (!(await ownsJob(userId, "interact", input.sessionId))) {
+          return failed("No browser session with that id.");
+        }
 
         if (input.action === "stop") {
           const result = await firecrawlRequest<unknown>("DELETE", `/interact/${input.sessionId}`);

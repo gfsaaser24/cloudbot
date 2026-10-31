@@ -18,6 +18,7 @@ import { z } from "zod";
 import { artifactSchema } from "../../schemas/artifact-schema.js";
 import { type Bindings } from "../../types/bindings.js";
 import { type CustomUIMessage } from "../../types/custom-ui-message.js";
+import { type TurnSpend } from "../chat/stop-conditions.js";
 import { documentHandlersByArtifactKind } from "../artifacts/artifact-server.js";
 import { getDocumentById } from "../queries/documents.js";
 
@@ -25,6 +26,8 @@ type UpdateDocumentProps = {
   userId: string;
   dataStream: UIMessageStreamWriter<CustomUIMessage>;
   env: Bindings;
+  // The turn's spend, which the generating model call adds to.
+  spend: TurnSpend;
 };
 
 const logger = createLogger("update-document");
@@ -33,6 +36,7 @@ export const updateDocument = ({
   userId,
   dataStream,
   env,
+  spend,
 }: UpdateDocumentProps) =>
   tool({
     description: "Update a document with the given description.",
@@ -84,6 +88,7 @@ export const updateDocument = ({
           dataStream,
           userId,
           env,
+          spend,
         });
 
         dataStream.write({

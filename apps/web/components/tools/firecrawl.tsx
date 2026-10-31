@@ -50,7 +50,9 @@ function approvalDetail(
     case "firecrawlAgent":
       return `Up to ${Math.min(Number(fields.maxCredits ?? 200), 500)} credits.`;
     case "firecrawlInteract":
-      return `A live browser session for up to ${Math.round(Number(fields.ttlSeconds ?? 600) / 60)} minutes.`;
+      return fields.action === "execute"
+        ? `Runs this ${String(fields.language ?? "node")} code in the browser session.`
+        : `A live browser session for up to ${Math.round(Number(fields.ttlSeconds ?? 600) / 60)} minutes.`;
     case "firecrawlMonitor": {
       const schedule = fields.schedule as { text?: string; cron?: string } | undefined;
       const targets = (fields.targets as unknown[] | undefined)?.length;
@@ -68,11 +70,23 @@ function approvalDetail(
   }
 }
 
+// The code a browser-session call would run, shown whole so the user approves
+// exactly what runs.
+function approvalCode(
+  name: FirecrawlToolName,
+  input: FirecrawlToolPart["input"],
+): string | undefined {
+  if (name !== "firecrawlInteract" || !input || typeof input !== "object") return undefined;
+  const { action, code } = input as Record<string, unknown>;
+  return action === "execute" && typeof code === "string" ? code : undefined;
+}
+
 export function ToolFirecrawl({ part }: { part: FirecrawlToolPart }) {
   const respond = useToolApproval();
   const name = part.type.slice("tool-".length) as FirecrawlToolName;
   const output = part.state === "output-available" ? part.output : undefined;
   const about = subject(part.input);
+  const code = approvalCode(name, part.input);
 
   return (
     <div className="w-full rounded-lg border p-3">
@@ -93,6 +107,11 @@ export function ToolFirecrawl({ part }: { part: FirecrawlToolPart }) {
             {approvalDetail(name, part.input)} This can use many Firecrawl
             credits. Run it?
           </span>
+          {code !== undefined && (
+            <pre className="bg-muted max-h-60 w-full overflow-auto rounded p-2 text-xs whitespace-pre-wrap">
+              {code}
+            </pre>
+          )}
           <Button size="sm" onClick={() => respond(part.approval.id, true)}>
             Run
           </Button>

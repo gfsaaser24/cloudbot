@@ -20,16 +20,17 @@ import {
 import { getModel } from "@workspace/api-routes/providers/providers.js";
 import { smoothStream, streamText } from "ai";
 import { HTTPException } from "hono/http-exception";
+import { callCost } from "../chat/stop-conditions.js";
 import { createDocumentHandler } from "./artifact-server.js";
 
 export const textDocumentHandler = createDocumentHandler<"text">({
   kind: "text",
-  onCreateDocument: async ({ title, description, dataStream, env }) => {
+  onCreateDocument: async ({ title, description, dataStream, env, spend }) => {
     let draftContent = "";
 
     const config = await getModel(env, artifactModelIdx);
 
-    const { stream } = streamText({
+    const { stream, providerMetadata } = streamText({
       model: config.model,
       instructions: createDocumentPrompt("text"),
       prompt: description ? `${title}\n\n${description}` : title,
@@ -52,9 +53,10 @@ export const textDocumentHandler = createDocumentHandler<"text">({
       }
     }
 
+    spend.tools += callCost(await providerMetadata);
     return draftContent;
   },
-  onUpdateDocument: async ({ document, description, dataStream, env }) => {
+  onUpdateDocument: async ({ document, description, dataStream, env, spend }) => {
     if (!document.content)
       throw new HTTPException(500, { message: "INTERNAL_SERVER_ERROR" });
 
@@ -62,7 +64,7 @@ export const textDocumentHandler = createDocumentHandler<"text">({
 
     const config = await getModel(env, artifactModelIdx);
 
-    const { stream } = streamText({
+    const { stream, providerMetadata } = streamText({
       model: config.model,
       instructions: updateDocumentPrompt(document.content, "text"),
       prompt: description,
@@ -85,6 +87,7 @@ export const textDocumentHandler = createDocumentHandler<"text">({
       }
     }
 
+    spend.tools += callCost(await providerMetadata);
     return draftContent;
   },
 });

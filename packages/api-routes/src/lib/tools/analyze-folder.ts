@@ -25,6 +25,10 @@ const EXTRACTION_TIMEOUT_MS = 90_000;
 const COST_LIMIT_MESSAGE =
   "Not analyzed: this turn reached its cost limit. Ask again to continue.";
 const CONCURRENCY = 8;
+// Each file is read whole into memory (a document goes to Markdown conversion
+// as one blob), and a Worker has 128 MB. So the files read at once also stay
+// within this many bytes; a bigger file is read on its own.
+const MAX_READING_BYTES = 24 * 1024 * 1024;
 // The extraction model reads at most this much of each file.
 const MAX_FILE_CHARS = 400_000;
 // The table stays in the history for good, so it is capped as a whole: each
@@ -78,7 +82,7 @@ export const analyzeFolderOutput = z.object({
 
 type AnalyzeFolderOutput = z.infer<typeof analyzeFolderOutput>;
 type Row = z.infer<typeof row>;
-type ScopedFile = { name: string; visibility: string; folderId: string };
+type ScopedFile = { name: string; visibility: string; folderId: string; size: number };
 
 const byName = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -107,8 +111,21 @@ async function filesInScope(
     const selected = fileMetadata
       .filter((f) => wanted(f.name))
       .sort((a, b) => byName(a.name, b.name));
+    const chosen = selected.slice(0, MAX_FILES);
+    const sizes = chosen.length
+      ? await db()
+          .select({ id: files.id, size: files.size })
+          .from(files)
+          .where(inArray(files.id, chosen.map((f) => f.id)))
+      : [];
+    const sizeOf = new Map(sizes.map((f) => [f.id, f.size]));
     return {
-      files: selected.slice(0, MAX_FILES),
+      files: chosen.map(({ name, visibility, folderId, id }) => ({
+        name,
+        visibility,
+        folderId,
+        size: sizeOf.get(id) ?? 0,
+      })),
       skipped: Math.max(selected.length - MAX_FILES, 0),
     };
   }
@@ -124,7 +141,12 @@ async function filesInScope(
   );
   const [rows, [total]] = await Promise.all([
     db()
-      .select({ name: files.name, visibility: files.visibility, folderId: files.folderId })
+      .select({
+        name: files.name,
+        visibility: files.visibility,
+        folderId: files.folderId,
+        size: files.size,
+      })
       .from(files)
       .where(where)
       .orderBy(asc(files.name))
@@ -224,22 +246,29 @@ export const analyzeFolder = ({ env, userId, fileMetadata, folderMetadata, spend
         }
       };
 
-      // CONCURRENCY files at a time; each finished file is reported as it
-      // completes.
+      // Up to CONCURRENCY files at a time, within MAX_READING_BYTES; each
+      // finished file is reported as it completes.
       const rows: Row[] = [];
       const running = new Map<number, Promise<[number, Row]>>();
+      let readingBytes = 0;
       let next = 0;
+      const canStartNext = () =>
+        next < total &&
+        running.size < CONCURRENCY &&
+        (running.size === 0 || readingBytes + scope.files[next]!.size <= MAX_READING_BYTES);
       const startNext = () => {
         const index = next++;
+        readingBytes += scope.files[index]!.size;
         running.set(index, extract(scope.files[index]!).then((done) => [index, done]));
       };
-      while (next < Math.min(CONCURRENCY, total)) startNext();
+      while (canStartNext()) startNext();
 
       while (running.size > 0) {
         const [index, done] = await Promise.race(running.values());
         running.delete(index);
+        readingBytes -= scope.files[index]!.size;
         rows.push(done);
-        if (next < total) startNext();
+        while (canStartNext()) startNext();
         if (rows.length < total) {
           yield { status: "running", completed: rows.length, total, rows: [], skipped: scope.skipped };
         }
