@@ -20,8 +20,10 @@ const MISSING_PART_TEXT = "(Part of this message could not be loaded.)";
 
 export type PartBucket = Pick<R2Bucket, "put" | "get" | "list" | "delete">;
 
+const MARKER_TYPE = "data-offloadedPart";
+
 type OffloadedPartMarker = {
-  type: "data-offloadedPart";
+  type: typeof MARKER_TYPE;
   data: { key: string };
 };
 
@@ -39,7 +41,7 @@ function isMarker(part: unknown): part is OffloadedPartMarker {
   return (
     typeof part === "object" &&
     part !== null &&
-    (part as { type?: unknown }).type === "data-offloadedPart"
+    (part as { type?: unknown }).type === MARKER_TYPE
   );
 }
 
@@ -52,30 +54,40 @@ export async function offloadLargeParts(
   let total = byteLength(message.parts);
   if (total <= ROW_BUDGET_BYTES) return message;
 
-  const parts: unknown[] = [...message.parts];
-  const largestFirst = parts
-    .map((part, index) => ({ index, size: byteLength(part) }))
+  const largestFirst = message.parts
+    .map((part, index) => {
+      const json = JSON.stringify(part);
+      return { index, json, size: encoder.encode(json).length };
+    })
     .filter(({ size }) => size > MIN_OFFLOAD_BYTES)
     .sort((a, b) => b.size - a.size);
 
-  for (const { index, size } of largestFirst) {
+  // Choose by size first, so the R2 writes can run in parallel.
+  const chosen: { index: number; json: string; marker: OffloadedPartMarker }[] =
+    [];
+  for (const { index, json, size } of largestFirst) {
     if (total <= ROW_BUDGET_BYTES) break;
-
-    const key = `${partsPrefix(chatId, message.id)}${index}`;
-    // No file extension and an octet-stream type keep AI Search, which indexes
-    // this bucket, from indexing chat content as documents.
-    await bucket.put(key, JSON.stringify(parts[index]), {
-      httpMetadata: { contentType: "application/octet-stream" },
-    });
-
     const marker: OffloadedPartMarker = {
-      type: "data-offloadedPart",
-      data: { key },
+      type: MARKER_TYPE,
+      data: { key: `${partsPrefix(chatId, message.id)}${index}` },
     };
-    parts[index] = marker;
+    chosen.push({ index, json, marker });
     total -= size - byteLength(marker);
   }
 
+  // No file extension and an octet-stream type keep AI Search, which indexes
+  // this bucket, from indexing chat content as documents.
+  await Promise.all(
+    chosen.map(({ json, marker }) =>
+      bucket.put(marker.data.key, json, {
+        httpMetadata: { contentType: "application/octet-stream" },
+      }),
+    ),
+  );
+
+  // Markers replace parts only after every write succeeded.
+  const parts: unknown[] = [...message.parts];
+  for (const { index, marker } of chosen) parts[index] = marker;
   return { ...message, parts: parts as CustomUIMessagePart[] };
 }
 
@@ -119,13 +131,15 @@ export async function deleteOffloadedParts(
     ? messageIds.map((id) => partsPrefix(chatId, id))
     : [partsPrefix(chatId)];
 
-  for (const prefix of prefixes) {
-    let cursor: string | undefined;
-    do {
-      const page = await bucket.list({ prefix, cursor });
-      const keys = page.objects.map((object) => object.key);
-      if (keys.length > 0) await bucket.delete(keys);
-      cursor = page.truncated ? page.cursor : undefined;
-    } while (cursor);
-  }
+  await Promise.all(
+    prefixes.map(async (prefix) => {
+      let cursor: string | undefined;
+      do {
+        const page = await bucket.list({ prefix, cursor });
+        const keys = page.objects.map((object) => object.key);
+        if (keys.length > 0) await bucket.delete(keys);
+        cursor = page.truncated ? page.cursor : undefined;
+      } while (cursor);
+    }),
+  );
 }
