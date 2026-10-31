@@ -38,6 +38,18 @@ describe("chat title", () => {
     expect(calls[0]!.providerOptions).toEqual({ openrouter: { reasoning: { effort: "minimal" } } });
   });
 
+  it("names the chat after its first words when the title call fails", async () => {
+    const rejecting = new MockLanguageModelV4({
+      doGenerate: async () => {
+        throw new Error("max_tokens must be greater than thinking.budget_tokens");
+      },
+    });
+
+    const title = await generateTitleFromUserMessage({ message, model: rejecting });
+
+    expect(title).toBe("Please look inside the folder into");
+  });
+
   it("names the chat after its first words when the model returns no title", async () => {
     const title = await generateTitleFromUserMessage({ message, model: titleModel("", []) });
 
