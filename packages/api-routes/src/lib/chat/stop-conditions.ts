@@ -8,8 +8,8 @@ import {
 
 // Limits on one turn's tool loop: enough room for real research, within a
 // bounded cost.
-export const MAX_STEPS = 30;
-export const TURN_COST_CEILING_USD = 2;
+const MAX_STEPS = 30;
+const TURN_COST_CEILING_USD = 2;
 // From this share of the cost ceiling on, the model answers instead of
 // calling more tools.
 const FINAL_ANSWER_SHARE = 0.85;
@@ -23,7 +23,7 @@ function stepCost(step: StepResult<ToolSet>): number {
   return typeof usage.cost === "number" ? usage.cost : 0;
 }
 
-export function turnCost(steps: StepResult<ToolSet>[]): number {
+function turnCost(steps: StepResult<ToolSet>[]): number {
   return steps.reduce((sum, step) => sum + stepCost(step), 0);
 }
 

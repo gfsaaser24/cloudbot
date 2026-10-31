@@ -87,24 +87,27 @@ async function catalogEntry(
 // Settings for a chat answer, sent only when the model supports them, so
 // require_parameters never rules out every provider.
 function answerSettings(model: CatalogModel | undefined, reasoning: boolean) {
+  // Route only to providers that accept every parameter the request sends.
+  const provider = { require_parameters: true };
+  if (!model) return { provider };
+
   const supports = (parameter: string) =>
-    model?.supportedParameters.includes(parameter) ?? false;
+    model.supportedParameters.includes(parameter);
 
   return {
+    provider,
     ...(supports("verbosity") ? { extraBody: { verbosity: "high" } } : {}),
-    ...(reasoning && supports("reasoning")
+    ...(reasoning && model.reasoning
       ? { reasoning: { effort: "high" as const } }
       : {}),
     ...(supports("max_tokens")
       ? {
           maxTokens: Math.min(
             ANSWER_MAX_TOKENS,
-            model?.maxCompletionTokens ?? ANSWER_MAX_TOKENS,
+            model.maxCompletionTokens ?? ANSWER_MAX_TOKENS,
           ),
         }
       : {}),
-    // Route only to providers that accept every parameter the request sends.
-    provider: { require_parameters: true },
   };
 }
 
@@ -112,7 +115,7 @@ async function openRouterModel(
   modelId: string,
   { userId, webSearch, sessionId }: ModelOptions,
   // Only for a chat answer; titles, search and artifacts keep the defaults.
-  answer: ReturnType<typeof answerSettings> | Record<string, never> = {},
+  answer: Partial<ReturnType<typeof answerSettings>> = {},
 ): Promise<Config> {
   const { createOpenRouter } = await import("@openrouter/ai-sdk-provider");
 
