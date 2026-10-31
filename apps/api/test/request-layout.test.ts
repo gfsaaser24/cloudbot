@@ -60,6 +60,11 @@ vi.mock("@workspace/api-routes/providers/providers.js", async (importActual) => 
   };
 });
 
+// No network: the chat model's catalog entry decides only answer settings.
+vi.mock("@workspace/api-routes/providers/openrouter-catalog.js", () => ({
+  getOpenRouterCatalog: async () => [],
+}));
+
 vi.mock("@workspace/api-routes/lib/queries/messages.js", () => ({
   saveMessages: async ({ newMessages }: { newMessages: unknown[] }) => {
     calls.saved.push(...structuredClone(newMessages));

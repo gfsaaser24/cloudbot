@@ -2,7 +2,6 @@ import { db } from "@workspace/server/drizzle/db.js";
 import { files, folders } from "@workspace/server/drizzle/schema.js";
 import { createLogger } from "@workspace/server/logger/logger.js";
 import {
-  isStepCount,
   streamText,
   toUIMessageStream,
   type Tool,
@@ -12,6 +11,7 @@ import { inArray } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import { standardSystemPrompt } from "../../providers/prompts.js";
 import { contextOverflowMessage } from "./chat-history.js";
+import { prepareFinalAnswer, stopWhen } from "./stop-conditions.js";
 import { type Bindings } from "../../types/bindings.js";
 import { type TurnContextSection } from "../../schemas/data-schemas.js";
 import { type CustomUIMessage } from "../../types/custom-ui-message.js";
@@ -351,7 +351,8 @@ export class StandardChatHandler extends ChatHandler {
     const result = streamText({
       ...streamConfig,
       tools,
-      stopWhen: isStepCount(6),
+      stopWhen,
+      prepareStep: prepareFinalAnswer,
       onError: ({ error }) => {
         logger.error("Model stream error", error);
       },

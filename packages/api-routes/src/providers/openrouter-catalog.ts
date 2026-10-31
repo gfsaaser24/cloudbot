@@ -1,6 +1,8 @@
 // The chat model menu lists every OpenRouter model that supports tool calling
-// (the chat always sends tools). The list comes from OpenRouter's public
-// models endpoint and is cached per Worker isolate for an hour.
+// (the chat always sends tools, and the AI SDK sends tool_choice with them).
+// The list comes from OpenRouter's public models endpoint and is cached per
+// Worker isolate for an hour. The chat also reads each model's supported
+// parameters from it, to send only settings the model accepts.
 
 export interface CatalogModel {
   id: string; // OpenRouter model id, e.g. "anthropic/claude-sonnet-5.5"
@@ -10,6 +12,8 @@ export interface CatalogModel {
   pdfs: boolean;
   reasoning: boolean;
   contextLength: number;
+  supportedParameters: string[];
+  maxCompletionTokens: number | null;
 }
 
 type OpenRouterModel = {
@@ -19,6 +23,7 @@ type OpenRouterModel = {
   context_length?: number;
   architecture?: { input_modalities?: string[] };
   supported_parameters?: string[];
+  top_provider?: { max_completion_tokens?: number | null };
 };
 
 const CACHE_TTL_MS = 60 * 60 * 1000;
@@ -48,7 +53,11 @@ export async function getOpenRouterCatalog(): Promise<CatalogModel[]> {
   const { data } = (await response.json()) as { data: OpenRouterModel[] };
 
   const models = data
-    .filter((m) => m.supported_parameters?.includes("tools"))
+    .filter(
+      (m) =>
+        m.supported_parameters?.includes("tools") &&
+        m.supported_parameters.includes("tool_choice"),
+    )
     .map((m) => {
       const inputs = m.architecture?.input_modalities ?? [];
       return {
@@ -60,6 +69,8 @@ export async function getOpenRouterCatalog(): Promise<CatalogModel[]> {
         pdfs: true,
         reasoning: m.supported_parameters?.includes("reasoning") ?? false,
         contextLength: m.context_length ?? 0,
+        supportedParameters: m.supported_parameters ?? [],
+        maxCompletionTokens: m.top_provider?.max_completion_tokens ?? null,
       };
     })
     .sort((a, b) => a.label.localeCompare(b.label));

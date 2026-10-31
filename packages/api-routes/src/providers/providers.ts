@@ -2,6 +2,7 @@ import { type JSONValue, type LanguageModel } from "ai";
 import { HTTPException } from "hono/http-exception";
 import { Bindings } from "../types/bindings.js";
 import { chatModels } from "./models.js";
+import { type CatalogModel, getOpenRouterCatalog } from "./openrouter-catalog.js";
 
 export interface Config {
   model: LanguageModel;
@@ -22,6 +23,9 @@ export interface ModelOptions {
 // Anthropic models, including aliases such as "~anthropic/claude-sonnet-latest".
 const ANTHROPIC_MODEL = /^~?anthropic\//;
 
+// Room for a long answer even after reasoning, capped by the model's maximum.
+const ANSWER_MAX_TOKENS = 32_000;
+
 // `model` is either an index into the configured models (used for titles,
 // artifacts, search and completion) or an OpenRouter model id picked in the
 // chat model menu.
@@ -31,7 +35,11 @@ export const getModel = async (
   options: ModelOptions = {},
 ): Promise<Config> => {
   if (typeof model === "string") {
-    return openRouterModel(model, options);
+    const settings = answerSettings(
+      await catalogEntry(model),
+      options.reasoning ?? false,
+    );
+    return openRouterModel(model, options, settings);
   }
 
   const chatModel = chatModels[model];
@@ -63,9 +71,48 @@ export const getModel = async (
   }
 };
 
+// A chat model's catalog entry, or undefined when the catalog has none or
+// can't be loaded; the chat then sends no capability-dependent settings.
+async function catalogEntry(
+  modelId: string,
+): Promise<CatalogModel | undefined> {
+  try {
+    const models = await getOpenRouterCatalog();
+    return models.find((m) => m.id === modelId);
+  } catch {
+    return undefined;
+  }
+}
+
+// Settings for a chat answer, sent only when the model supports them, so
+// require_parameters never rules out every provider.
+function answerSettings(model: CatalogModel | undefined, reasoning: boolean) {
+  const supports = (parameter: string) =>
+    model?.supportedParameters.includes(parameter) ?? false;
+
+  return {
+    ...(supports("verbosity") ? { extraBody: { verbosity: "high" } } : {}),
+    ...(reasoning && supports("reasoning")
+      ? { reasoning: { effort: "high" as const } }
+      : {}),
+    ...(supports("max_tokens")
+      ? {
+          maxTokens: Math.min(
+            ANSWER_MAX_TOKENS,
+            model?.maxCompletionTokens ?? ANSWER_MAX_TOKENS,
+          ),
+        }
+      : {}),
+    // Route only to providers that accept every parameter the request sends.
+    provider: { require_parameters: true },
+  };
+}
+
 async function openRouterModel(
   modelId: string,
-  { reasoning, userId, webSearch, sessionId }: ModelOptions,
+  { userId, webSearch, sessionId }: ModelOptions,
+  // Only for a chat answer; titles, search and artifacts keep the defaults.
+  answer: ReturnType<typeof answerSettings> | Record<string, never> = {},
 ): Promise<Config> {
   const { createOpenRouter } = await import("@openrouter/ai-sdk-provider");
 
@@ -81,7 +128,7 @@ async function openRouterModel(
       // Token counts and cost for every response.
       usage: { include: true },
       user: userId,
-      ...(reasoning ? { reasoning: { effort: "medium" } } : {}),
+      ...answer,
       // Anthropic needs caching turned on; one hour so a follow-up after a break
       // still hits it. The other providers cache automatically, and on Gemini
       // cache_control would switch on paid explicit caching.
