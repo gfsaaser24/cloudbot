@@ -13,6 +13,7 @@ import { HTTPException } from "hono/http-exception";
 import { standardSystemPrompt } from "../../providers/prompts.js";
 import { contextOverflowMessage } from "./chat-history.js";
 import { type Bindings } from "../../types/bindings.js";
+import { type TurnContextSection } from "../../schemas/data-schemas.js";
 import { type CustomUIMessage } from "../../types/custom-ui-message.js";
 import {
   type FileMetadata,
@@ -65,44 +66,83 @@ export class StandardChatHandler extends ChatHandler {
     super(env, request, waitUntil);
   }
 
-  private async buildSystemPrompt(): Promise<string> {
-    let finalPrompt = await this.buildBaseSystemPrompt(this.systemPrompt);
+  // The same on every turn, so the provider can reuse its cached prompt.
+  private buildSystemPrompt(): string {
+    return isComposioConfigured()
+      ? this.systemPrompt + composioPrompt
+      : this.systemPrompt;
+  }
 
-    if (isComposioConfigured()) {
-      finalPrompt += composioPrompt;
-    }
+  // What changes from turn to turn goes on the new user message and is saved
+  // with it, so earlier turns replay unchanged. The date and location are added
+  // every turn; the project and the selected instructions only when they differ
+  // from the latest ones already in the conversation, since the selection stays
+  // on across turns and the whole conversation is replayed.
+  private async addTurnContext(): Promise<void> {
+    const lastMessage = this.request.lastMessage;
+    if (lastMessage.role !== "user") return;
 
-    if (this.project) {
-      const effectiveFilter = this.getEffectiveContextFilter();
-      const searchesProject =
-        !effectiveFilter?.files.length &&
-        !!effectiveFilter?.folders.some(
-          (f) => f.id === this.project?.folder.id,
-        );
-      finalPrompt += buildProjectPrompt(this.project, searchesProject);
-    }
-
-    // Append context filter prompts to the system prompt
-    const contextFilter = this.getContextFilter();
-    if (contextFilter && contextFilter.prompts.length > 0) {
-      const promptIds = contextFilter.prompts.map((p) => p.id);
-      const userPrompts = await getPromptsByIds({
-        ids: promptIds,
-        userId: this.request.user.id,
-      });
-
-      if (userPrompts.length > 0) {
-        finalPrompt += `\n\n## User-Selected Instructions\n\n`;
-        finalPrompt += `The user has selected the following custom instructions. Follow them carefully:\n\n`;
-        for (const prompt of userPrompts) {
-          finalPrompt += `### ${prompt.name}\n\n${prompt.content}\n\n`;
+    const latest = new Map<TurnContextSection, string>();
+    for (const message of this.request.messages) {
+      for (const part of message.parts) {
+        if (part.type === "data-turnContext") {
+          latest.set(part.data.section, part.data.text);
         }
       }
     }
 
-    logger.info("Final system prompt:\n\n", finalPrompt);
+    const sections: [TurnContextSection, string | undefined][] = [
+      ["now", `\n\n${this.buildCurrentContext()}`],
+      ["project", this.buildProjectSection()],
+      ["instructions", await this.buildInstructionsSection(latest)],
+    ];
 
-    return finalPrompt;
+    for (const [section, text] of sections) {
+      if (text === undefined) continue;
+      if (section !== "now" && latest.get(section) === text) continue;
+      lastMessage.parts.push({
+        type: "data-turnContext",
+        data: { section, text },
+      });
+    }
+  }
+
+  private buildProjectSection(): string | undefined {
+    if (!this.project) return undefined;
+
+    const effectiveFilter = this.getEffectiveContextFilter();
+    const searchesProject =
+      !effectiveFilter?.files.length &&
+      !!effectiveFilter?.folders.some((f) => f.id === this.project?.folder.id);
+    return buildProjectPrompt(this.project, searchesProject);
+  }
+
+  // Selected instructions apply from the message they were selected on until a
+  // later message changes or removes them.
+  private async buildInstructionsSection(
+    latest: Map<TurnContextSection, string>,
+  ): Promise<string | undefined> {
+    const contextFilter = this.getContextFilter();
+    const userPrompts = contextFilter?.prompts.length
+      ? await getPromptsByIds({
+          ids: contextFilter.prompts.map((p) => p.id),
+          userId: this.request.user.id,
+        })
+      : [];
+
+    if (userPrompts.length === 0) {
+      // Earlier messages still carry the old instructions, so say they ended.
+      return latest.has("instructions")
+        ? `\n\n## User-Selected Instructions\n\nThe user removed the custom instructions selected earlier. Don't follow them any more.\n`
+        : undefined;
+    }
+
+    let section = `\n\n## User-Selected Instructions\n\n`;
+    section += `The user selected the following custom instructions. Follow them carefully from this message on; they replace any selected earlier:\n\n`;
+    for (const prompt of userPrompts) {
+      section += `### ${prompt.name}\n\n${prompt.content}\n\n`;
+    }
+    return section;
   }
 
   // The message's context filter, falling back to the chat's project folder
@@ -166,16 +206,15 @@ export class StandardChatHandler extends ChatHandler {
       ...(await this.composioTools()),
     };
 
-    // Only include extractFromDocuments and readFile if context filter has files or folders
+    // Check permissions and get authorized file metadata
+    let authorizedFileMetadata: FileMetadata[] = [];
+    let authorizedFolderMetadata: FolderMetadata[] = [];
+
     if (
       contextFilter &&
       ((contextFilter.files && contextFilter.files.length > 0) ||
         (contextFilter.folders && contextFilter.folders.length > 0))
     ) {
-      // Check permissions and get authorized file metadata
-      let authorizedFileMetadata: FileMetadata[] = [];
-      let authorizedFolderMetadata: FolderMetadata[] = [];
-
       // Check files if present
       if (contextFilter.files && contextFilter.files.length > 0) {
         const fileIds = contextFilter.files.map((f) => f.id);
@@ -251,31 +290,36 @@ export class StandardChatHandler extends ChatHandler {
           authorizedFileMetadata,
         },
       );
-
-      tools.extractFromDocuments = extractFromDocuments({
-        env: this.env,
-        userId: this.request.user.id,
-        fileMetadata: authorizedFileMetadata,
-        folderMetadata: authorizedFolderMetadata,
-        dataStream: writer,
-      });
-      tools.readFile = readFile({
-        env: this.env,
-        userId: this.request.user.id,
-        fileMetadata: authorizedFileMetadata,
-        folderMetadata: authorizedFolderMetadata,
-      });
     }
 
-    if (this.request.webSearchEnabled) {
-      tools.extractFromWeb = extractFromWeb({
-        env: this.env,
-        userLocation: this.request.userLocation,
-        dataStream: writer,
-      });
-    }
+    // Registered on every turn, even with nothing selected or web search off:
+    // changing the tool list would invalidate the provider's prompt cache.
+    // They explain at call time when their precondition is off.
+    tools.extractFromDocuments = extractFromDocuments({
+      env: this.env,
+      userId: this.request.user.id,
+      fileMetadata: authorizedFileMetadata,
+      folderMetadata: authorizedFolderMetadata,
+      dataStream: writer,
+    });
+    tools.readFile = readFile({
+      env: this.env,
+      userId: this.request.user.id,
+      fileMetadata: authorizedFileMetadata,
+      folderMetadata: authorizedFolderMetadata,
+    });
+    tools.extractFromWeb = extractFromWeb({
+      env: this.env,
+      userLocation: this.request.userLocation,
+      dataStream: writer,
+      enabled: Boolean(this.request.webSearchEnabled),
+    });
 
-    return tools;
+    // A fixed order, so the same tools always produce the same request. A plain
+    // comparison, since locale-aware ordering can vary between runtimes.
+    return Object.fromEntries(
+      Object.entries(tools).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+    );
   }
 
   protected async executeChat(
@@ -289,6 +333,7 @@ export class StandardChatHandler extends ChatHandler {
 
     // Integrate attachments and context filter documents into the messages
     await this.integrateContextIntoMessages();
+    await this.addTurnContext();
 
     // Saved after the attachments are added, so later turns replay them as sent.
     // A continuation (an assistant message) is saved by the reply's onEnd.
@@ -296,9 +341,8 @@ export class StandardChatHandler extends ChatHandler {
       await this.saveUserMessage();
     }
 
-    const systemPrompt = await this.buildSystemPrompt();
     const streamConfig = await this.buildStreamTextConfig({
-      systemPrompt,
+      systemPrompt: this.buildSystemPrompt(),
     });
     const tools = await this.retrieveToolSet(writer);
 

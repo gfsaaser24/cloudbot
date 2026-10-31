@@ -109,12 +109,9 @@ export abstract class ChatHandler {
     });
   }
 
-  protected async buildBaseSystemPrompt(
-    initialSystemPrompt: string,
-  ): Promise<string> {
-    let finalPrompt = initialSystemPrompt;
-
-    // Add current date and time information
+  // The date, time and location of this turn, sent with the user's message
+  // rather than in the instructions so the instructions never change.
+  protected buildCurrentContext(): string {
     const currentDate = new Date();
     const dateString = currentDate.toLocaleDateString("en-US", {
       weekday: "long",
@@ -128,19 +125,19 @@ export abstract class ChatHandler {
       timeZoneName: "short",
     });
 
-    finalPrompt += `\n\n## Current Context\n\n`;
-    finalPrompt += `Today's date is ${dateString} at ${timeString}.\n`;
+    let context = `## Current Context\n\n`;
+    context += `Today's date is ${dateString} at ${timeString}.\n`;
 
     // Add user location context from Cloudflare edge data
     const { city, region, country, timezone } = this.request.userLocation;
     if (timezone) {
-      finalPrompt += `The user is in the timezone: ${timezone}.\n`;
+      context += `The user is in the timezone: ${timezone}.\n`;
     }
     if (city && region && country) {
-      finalPrompt += `The user is located in ${city}, ${region}, ${country}.\n`;
+      context += `The user is located in ${city}, ${region}, ${country}.\n`;
     }
 
-    return finalPrompt;
+    return context;
   }
 
   protected getContextFilter(): ContextFilter | undefined {
@@ -285,6 +282,7 @@ export abstract class ChatHandler {
     const config = await getModel(this.env, this.request.model, {
       reasoning: this.request.reasoningEnabled,
       userId: this.request.user.id,
+      sessionId: this.request.id,
     });
     const modelMessages = await toModelHistory(this.request.messages);
 

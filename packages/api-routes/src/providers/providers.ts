@@ -14,7 +14,13 @@ export interface ModelOptions {
   userId?: string;
   // Use OpenRouter's web search plugin (results come back as URL sources).
   webSearch?: boolean;
+  // The chat id: keeps a chat's requests on the same provider, where its prompt
+  // is already cached.
+  sessionId?: string;
 }
+
+// Anthropic models, including aliases such as "~anthropic/claude-sonnet-latest".
+const ANTHROPIC_MODEL = /^~?anthropic\//;
 
 // `model` is either an index into the configured models (used for titles,
 // artifacts, search and completion) or an OpenRouter model id picked in the
@@ -59,7 +65,7 @@ export const getModel = async (
 
 async function openRouterModel(
   modelId: string,
-  { reasoning, userId, webSearch }: ModelOptions,
+  { reasoning, userId, webSearch, sessionId }: ModelOptions,
 ): Promise<Config> {
   const { createOpenRouter } = await import("@openrouter/ai-sdk-provider");
 
@@ -76,9 +82,11 @@ async function openRouterModel(
       usage: { include: true },
       user: userId,
       ...(reasoning ? { reasoning: { effort: "medium" } } : {}),
-      // Automatic prompt caching; only Anthropic models honor this.
-      ...(modelId.startsWith("anthropic/")
-        ? { cache_control: { type: "ephemeral" } }
+      // Anthropic needs caching turned on; one hour so a follow-up after a break
+      // still hits it. The other providers cache automatically, and on Gemini
+      // cache_control would switch on paid explicit caching.
+      ...(ANTHROPIC_MODEL.test(modelId)
+        ? { cache_control: { type: "ephemeral", ttl: "1h" } }
         : {}),
       plugins: [
         // Lets every model read PDFs, not just ones with native file input.
@@ -87,6 +95,6 @@ async function openRouterModel(
         ...(webSearch ? [{ id: "web" as const, max_results: 8 }] : []),
       ],
     }),
-    providerOptions: {},
+    providerOptions: sessionId ? { openrouter: { session_id: sessionId } } : {},
   };
 }

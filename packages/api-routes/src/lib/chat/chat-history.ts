@@ -6,10 +6,14 @@ import { mockedTools } from "../tools/index.js";
 // trimmed or summarized; a conversation that no longer fits the model's context
 // window gets a clear error instead (contextOverflowMessage).
 
-// Parts only the server adds (attachments, document text). A client copy of a
-// message never supplies them; the server adds them again from the attachments.
+// Parts only the server adds (attachments, document text, turn context). A
+// client copy of a message never supplies them; the server adds them again.
 // Saved ones are the server's own and replay as sent.
-const SERVER_PART_TYPES = new Set(["file", "data-attachmentText"]);
+const SERVER_PART_TYPES = new Set([
+  "file",
+  "data-attachmentText",
+  "data-turnContext",
+]);
 
 type Part = CustomUIMessage["parts"][number];
 
@@ -75,7 +79,7 @@ export function toModelHistory(
     // A turn that was cut off can leave a tool call without a result.
     ignoreIncompleteToolCalls: true,
     convertDataPart: (part) =>
-      part.type === "data-attachmentText"
+      part.type === "data-attachmentText" || part.type === "data-turnContext"
         ? { type: "text", text: part.data.text }
         : undefined,
   });

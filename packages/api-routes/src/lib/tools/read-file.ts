@@ -54,6 +54,16 @@ export const readFile = ({
     inputSchema: readFileInput,
     outputSchema: readFileOutput,
     execute: async ({ filename, folderId }) => {
+      // Always offered so the tool list never changes between turns.
+      if (fileMetadata.length === 0 && folderMetadata.length === 0) {
+        return {
+          found: false,
+          filename,
+          message:
+            "No folder or file is selected for this message, so there is nothing to read. Ask the user to select a folder or file.",
+        };
+      }
+
       // Selected files limit reading to those files; otherwise any file in the selected folders.
       const scope = fileMetadata.length
         ? fileMetadata.map((f) => f.folderId)

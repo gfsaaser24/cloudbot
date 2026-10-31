@@ -13,6 +13,8 @@ type ExtractFromWebProps = {
   env: Bindings;
   userLocation: UserLocation;
   dataStream: UIMessageStreamWriter<CustomUIMessage>;
+  // The user's web search toggle for this message.
+  enabled: boolean;
 };
 
 export type WebSource = {
@@ -61,7 +63,11 @@ const tavilyTools = () => ({
   }),
 });
 
-export const extractFromWeb = ({ env, userLocation }: ExtractFromWebProps) =>
+export const extractFromWeb = ({
+  env,
+  userLocation,
+  enabled,
+}: ExtractFromWebProps) =>
   tool({
     description:
       "Searches the web for current information. Use this tool when you need to find up-to-date information, news, or facts that may not be in your training data.",
@@ -74,6 +80,15 @@ export const extractFromWeb = ({ env, userLocation }: ExtractFromWebProps) =>
       extractedInformation: z.string(),
     }),
     execute: async ({ informationToExtract }) => {
+      // Always offered so the tool list never changes between turns.
+      if (!enabled) {
+        return {
+          extractedInformation:
+            "Web search is turned off for this message. Answer without it, or ask the user to turn on web search.",
+          sources: [],
+        };
+      }
+
       try {
         const provider = process.env.SEARCH_PROVIDER as SearchProvider;
 
