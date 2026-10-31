@@ -208,21 +208,26 @@ export const chats = sqliteTable("chats", {
 export type Chat = InferSelectModel<typeof chats>;
 
 // Messages table
-export const messages = sqliteTable("messages", {
-  id: text("id")
-    .primaryKey()
-    .notNull()
-    .$defaultFn(() => crypto.randomUUID()),
-  chatId: text("chat_id")
-    .notNull()
-    .references(() => chats.id, { onDelete: "cascade" }),
-  role: text("role", { enum: ["user", "assistant", "system"] }).notNull(),
-  parts: text("parts", { mode: "json" }).notNull(),
-  metadata: text("metadata", { mode: "json" }),
-  createdAt: integer("created_at", { mode: "timestamp_ms" })
-    .notNull()
-    .default(sql`(unixepoch() * 1000)`),
-});
+export const messages = sqliteTable(
+  "messages",
+  {
+    id: text("id")
+      .primaryKey()
+      .notNull()
+      .$defaultFn(() => crypto.randomUUID()),
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    role: text("role", { enum: ["user", "assistant", "system"] }).notNull(),
+    parts: text("parts", { mode: "json" }).notNull(),
+    metadata: text("metadata", { mode: "json" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  // Every turn loads a chat's messages in order.
+  (table) => [index("messages_chatId_createdAt_idx").on(table.chatId, table.createdAt)],
+);
 
 export type Message = InferSelectModel<typeof messages>;
 

@@ -27,6 +27,13 @@ export type DocumentSource = {
 
 const logger = createLogger("extract-from-documents");
 
+// AutoRAG returns its best chunks grouped by file, and one long file that
+// matches most queries (a style guide, say) can fill every slot. So the most
+// chunks it allows are fetched, each file keeps its best few, and the passages
+// returned stay at max_num_results.
+const CHUNKS_FETCHED = 50;
+const CHUNKS_PER_FILE = 2;
+
 const sourceSchema = z.object({
   folderId: z.string(),
   filename: z.string(),
@@ -92,7 +99,7 @@ export const extractFromDocuments = ({
           process.env.AUTORAG_NAME ?? "",
         ).search({
           query,
-          max_num_results,
+          max_num_results: CHUNKS_FETCHED,
           ranking_options: {
             score_threshold: 0.2,
           },
@@ -105,14 +112,20 @@ export const extractFromDocuments = ({
           ? searchResult.data.filter((item) => fileKeys.has(item.filename))
           : searchResult.data;
 
-        const excerpts = results.map((item) => {
+        let passagesLeft = max_num_results;
+        const excerpts = results.flatMap((item) => {
+          const chunks = item.content.slice(0, Math.min(CHUNKS_PER_FILE, passagesLeft));
+          if (chunks.length === 0) return [];
+          passagesLeft -= chunks.length;
           const parts = item.filename.split("/");
-          return {
-            folderId: parts[parts.length - 2] ?? "",
-            filename: parts[parts.length - 1] ?? item.filename,
-            score: item.score,
-            text: item.content.map((c) => c.text).join("\n"),
-          };
+          return [
+            {
+              folderId: parts[parts.length - 2] ?? "",
+              filename: parts[parts.length - 1] ?? item.filename,
+              score: item.score,
+              text: chunks.map((c) => c.text).join("\n"),
+            },
+          ];
         });
 
         logger.info(

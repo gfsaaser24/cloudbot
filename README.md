@@ -138,13 +138,10 @@ These values are passed to the API, App, and Dashboard Worker deployments.
 | `R2_ENDPOINT`                | Yes                              | Endpoint URL for your R2 bucket API access.                              | Set to `https://your-account-id.r2.cloudflarestorage.com`                                                                                             |
 | `R2_BUCKET_NAME`             | Yes                              | Target R2 bucket name.                                                   | Bucket name created in Step 5.                                                                                                                        |
 | `CLOUDFLARE_ACCESS_KEY_ID`   | Yes                              | R2 S3 access key ID.                                                     | Cloudflare R2 -> API Tokens -> create R2 API token/access key pair.                                                                                   |
-| `SEARCH_PROVIDER`            | Yes                              | Name of configured search provider (see below table for allowed values). | Choose based on the API key you configured.                                                                                                           |
 | `TITLE_MODEL_IDX`            | Optional                         | Index of model in `NEXT_PUBLIC_LLM_MODELS` for title generation.         | Choose integer index from your models array.                                                                                                          |
 | `ARTIFACT_MODEL_IDX`         | Optional                         | Index of model for artifact generation.                                  | Choose integer index from your models array.                                                                                                          |
 | `SEARCH_MODEL_IDX`           | Optional                         | Index of model used for search tasks.                                    | Choose integer index from your models array.                                                                                                          |
 | `COMPLETION_MODEL_IDX`       | Optional                         | Index of model used for text completion in text editor.                  | Choose integer index from your models array.                                                                                                          |
-
-SEARCH_PROVIDER allowed values: `vercel-ai-perplexity`, `vercel-ai-parallel` (both need the Vercel AI Gateway), `tavily` (needs `TAVILY_API_KEY`).
 
 **GitHub Secrets (`secrets`)**
 
@@ -159,9 +156,9 @@ SEARCH_PROVIDER allowed values: `vercel-ai-perplexity`, `vercel-ai-parallel` (bo
 | `CLOUDFLARE_SECRET_ACCESS_KEY` | Yes                                   | R2 S3 secret key paired with `CLOUDFLARE_ACCESS_KEY_ID`. | Cloudflare R2 API token/access key creation flow.                           |
 | `AI_GATEWAY_API_KEY`           | Required if Vercel AI Gateway used    | Vercel AI Gateway api key.                               | Vercel dashboard.                                                           |
 | `OPENROUTER_API_KEY`           | Required if OpenRouter used           | OpenRouter API key for model calls.                      | OpenRouter dashboard -> Keys.                                               |
-| `TAVILY_API_KEY`               | Required if Tavily search used        | API key for Tavily search provider.                      | Tavily dashboard -> API keys.                                               |
+| `FIRECRAWL_API_KEY`            | Required for web search               | Firecrawl key for web search, pages and transcripts.     | Firecrawl dashboard -> API Keys.                                            |
 
-> WARNING: The `deploy-api` step also has a Wrangler `secrets:` list. Keep this list in sync with the values you actually use (e.g. if you dont use tavily, remove TAVILY_API_KEY from the `secrets:` list). If a key is listed there but missing in GitHub (and thus in `env:`), deployment will fail.
+> WARNING: The `deploy-api` step also has a Wrangler `secrets:` list. Keep this list in sync with the values you actually use (e.g. add COMPOSIO_API_KEY to the `secrets:` list only once that GitHub secret exists). If a key is listed there but missing in GitHub (and thus in `env:`), deployment will fail.
 
 ### Step 9: Deploy via GitHub Actions (Automatic)
 
