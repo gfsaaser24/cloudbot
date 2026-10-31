@@ -1,8 +1,10 @@
 import * as z from "zod";
 
+import { restoreOffloadedParts } from "@workspace/api-routes/lib/chat/part-storage.js";
 import { getChatById } from "@workspace/api-routes/lib/queries/chats.js";
 import { uuidSchema } from "@workspace/api-routes/schemas/uuid-schema.js";
 import { type Bindings } from "@workspace/api-routes/types/bindings.js";
+import { type CustomUIMessage } from "@workspace/api-routes/types/custom-ui-message.js";
 import { type Variables } from "@workspace/api-routes/types/variables.js";
 import { db } from "@workspace/server/drizzle/db.js";
 import { messages } from "@workspace/server/drizzle/schema.js";
@@ -42,7 +44,12 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>().get(
       .where(eq(messages.chatId, chatId))
       .orderBy(asc(messages.createdAt));
 
-    return c.json(result);
+    return c.json(
+      await restoreOffloadedParts(
+        c.env.CLOUDBOT_BUCKET,
+        result as CustomUIMessage[],
+      ),
+    );
   },
 );
 

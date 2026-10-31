@@ -2,6 +2,11 @@ import { db } from "@workspace/server/drizzle/db.js";
 import { messages } from "@workspace/server/drizzle/schema.js";
 import { desc, eq, inArray, sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
+import {
+  offloadLargeParts,
+  type PartBucket,
+  restoreOffloadedParts,
+} from "../chat/part-storage.js";
 import { type CustomUIMessage } from "../../types/custom-ui-message.js";
 
 export async function getMessageById({ messageId }: { messageId: string }) {
@@ -18,28 +23,36 @@ export async function getMessageById({ messageId }: { messageId: string }) {
 }
 
 export async function getMessagesByChatId({
+  bucket,
   chatId,
   messageCount,
 }: {
+  bucket: PartBucket;
   chatId: string;
   messageCount: number;
 }) {
-  return (await db()
+  const rows = (await db()
     .select()
     .from(messages)
     .where(eq(messages.chatId, chatId))
     .orderBy(desc(messages.createdAt))
     .limit(messageCount)) as CustomUIMessage[];
+  return restoreOffloadedParts(bucket, rows);
 }
 
 export async function saveMessages({
+  bucket,
   chatId,
   newMessages,
 }: {
+  bucket: PartBucket;
   chatId: string;
   newMessages: CustomUIMessage[];
 }) {
-  const messagesToInsert = newMessages.map((msg) => ({
+  const storedMessages = await Promise.all(
+    newMessages.map((msg) => offloadLargeParts(bucket, chatId, msg)),
+  );
+  const messagesToInsert = storedMessages.map((msg) => ({
     chatId,
     ...msg,
   }));

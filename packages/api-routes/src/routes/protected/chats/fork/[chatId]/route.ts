@@ -1,8 +1,13 @@
 import * as z from "zod";
 
+import {
+  offloadLargeParts,
+  restoreOffloadedParts,
+} from "@workspace/api-routes/lib/chat/part-storage.js";
 import { getChatById } from "@workspace/api-routes/lib/queries/chats.js";
 import { uuidSchema } from "@workspace/api-routes/schemas/uuid-schema.js";
 import { type Bindings } from "@workspace/api-routes/types/bindings.js";
+import { type CustomUIMessage } from "@workspace/api-routes/types/custom-ui-message.js";
 import { type Variables } from "@workspace/api-routes/types/variables.js";
 import { db } from "@workspace/server/drizzle/db.js";
 import { chats, messages } from "@workspace/server/drizzle/schema.js";
@@ -108,13 +113,27 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>().post(
       throw new HTTPException(500, { message: "INTERNAL_SERVER_ERROR" });
     }
 
-    // Copy messages to new chat
+    // Copy messages to new chat. Offloaded parts are restored from the source chat
+    // and stored again under the fork, so deleting the source can't break it.
     if (messagesToCopy.length > 0) {
+      const bucket = c.env.CLOUDBOT_BUCKET;
+      const restored = await restoreOffloadedParts(
+        bucket,
+        messagesToCopy.map((msg) => ({
+          ...msg,
+          id: crypto.randomUUID(),
+        })) as CustomUIMessage[],
+      );
+      const copies = await Promise.all(
+        restored.map((msg) => offloadLargeParts(bucket, newChat.id, msg)),
+      );
+
       const baseCreatedAt = new Date();
       await db()
         .insert(messages)
         .values(
-          messagesToCopy.map((msg, index) => ({
+          copies.map((msg, index) => ({
+            id: msg.id,
             chatId: newChat.id,
             role: msg.role,
             parts: msg.parts,

@@ -1,5 +1,6 @@
 import * as z from "zod";
 
+import { deleteOffloadedParts } from "@workspace/api-routes/lib/chat/part-storage.js";
 import { uuidSchema } from "@workspace/api-routes/schemas/uuid-schema.js";
 import { type Bindings } from "@workspace/api-routes/types/bindings.js";
 import { type Variables } from "@workspace/api-routes/types/variables.js";
@@ -60,6 +61,7 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
       if (result.rowCount === 0) {
         throw new HTTPException(404, { message: "NOT_FOUND" });
       }
+      await deleteOffloadedParts(c.env.CLOUDBOT_BUCKET, chatId);
 
       return c.json({ message: "Chat deleted" });
     },
