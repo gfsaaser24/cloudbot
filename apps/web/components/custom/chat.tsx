@@ -56,7 +56,7 @@ export function Chat({
       id: chatId,
       messages: initialMessages,
       generateId: generateUUID,
-      experimental_throttle: 100,
+      throttle: 100,
       onData: (dataPart) => {
         setDataStream((prevDataStream) => [...prevDataStream, dataPart]);
       },

@@ -275,7 +275,7 @@ export abstract class ChatHandler {
     let modelMessages = await convertToModelMessages(this.request.messages);
 
     return {
-      system: systemPrompt,
+      instructions: systemPrompt,
       model: config.model,
       providerOptions: config.providerOptions,
       messages: modelMessages,

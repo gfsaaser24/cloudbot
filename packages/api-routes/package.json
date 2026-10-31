@@ -14,14 +14,15 @@
     "lint": "eslint \"src/**/*.ts*\" --max-warnings 0"
   },
   "dependencies": {
+    "@ai-sdk/provider": "4.0.35",
+    "@ai-sdk/provider-utils": "5.0.72",
     "@hono/node-server": "1.19.9",
-    "@openrouter/ai-sdk-provider": "2.10.0",
+    "@openrouter/ai-sdk-provider": "3.1.0",
     "@workspace/server": "workspace:*",
-    "ai": "6.0.80",
+    "ai": "7.0.159",
     "aws4fetch": "1.0.20",
     "drizzle-orm": "0.45.1",
     "hono": "4.11.8",
-    "workers-ai-provider": "3.0.4",
     "zod": "4.3.6"
   },
   "devDependencies": {

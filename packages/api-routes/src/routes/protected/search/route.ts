@@ -118,7 +118,7 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>().post(
     const config = await getModel(c.env, searchModelIdx);
     const { text } = await generateText({
       model: config.model,
-      system: documentSearchPrompt,
+      instructions: documentSearchPrompt,
       prompt: `Query: ${query}\n\nSources:\n${context}`,
     });
 

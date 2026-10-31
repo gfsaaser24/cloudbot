@@ -120,7 +120,7 @@ export const extractFromWeb = ({ env, userLocation }: ExtractFromWebProps) =>
           webSearch: provider === "openrouter",
         });
         const result = await generateText({
-          system: webSearchPrompt,
+          instructions: webSearchPrompt,
           prompt:
             "Extract the following information from the web: " +
             informationToExtract,

@@ -2,8 +2,9 @@ import { db } from "@workspace/server/drizzle/db.js";
 import { files, folders } from "@workspace/server/drizzle/schema.js";
 import { createLogger } from "@workspace/server/logger/logger.js";
 import {
-  stepCountIs,
+  isStepCount,
   streamText,
+  toUIMessageStream,
   type Tool,
   type UIMessageStreamWriter,
 } from "ai";
@@ -299,7 +300,7 @@ export class StandardChatHandler extends ChatHandler {
     const result = streamText({
       ...streamConfig,
       tools,
-      stopWhen: stepCountIs(6),
+      stopWhen: isStepCount(6),
       onError: ({ error }) => {
         logger.error("Model stream error", error);
       },
@@ -309,9 +310,10 @@ export class StandardChatHandler extends ChatHandler {
     this.waitUntil?.(result.consumeStream());
 
     writer.merge(
-      result.toUIMessageStream({
+      toUIMessageStream<typeof tools, CustomUIMessage>({
+        stream: result.stream,
         generateMessageId: generateUUID,
-        onFinish: async ({ responseMessage }) => {
+        onEnd: async ({ responseMessage }) => {
           await this.saveResponseMessages([responseMessage]);
         },
         messageMetadata: ({ part }) => {
