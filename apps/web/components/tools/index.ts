@@ -1,3 +1,4 @@
+export { ToolAnalyzeFolder } from "./analyze-folder";
 export { ToolCreateDocument } from "./create-document";
 export { ToolDynamic } from "./dynamic-tool";
 export { ToolExtractFromDocuments } from "./extract-from-documents";

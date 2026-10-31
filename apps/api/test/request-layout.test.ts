@@ -41,6 +41,7 @@ const chatModel = new MockLanguageModelV4({
             {
               type: "finish",
               finishReason: { unified: "tool-calls", raw: "tool_calls" },
+              providerMetadata: { openrouter: { usage: { cost: 0.01 } } },
               usage: {
                 inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
                 outputTokens: { total: 1, text: 1, reasoning: 0 },
@@ -59,6 +60,7 @@ const chatModel = new MockLanguageModelV4({
           {
             type: "finish",
             finishReason: { unified: "stop", raw: "stop" },
+            providerMetadata: { openrouter: { usage: { cost: 0.02 } } },
             usage: {
               inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
               outputTokens: { total: 1, text: 1, reasoning: 0 },
@@ -329,6 +331,18 @@ describe("prompt caching settings", () => {
 
   it("puts the chat id in session_id", async () => {
     expect((await requestBody("openai/gpt-6-luna")).session_id).toBe("chat-1");
+  });
+});
+
+describe("reply usage", () => {
+  it("saves the whole turn's cost, summed over its steps", async () => {
+    // Step 1 asks for a tool ($0.01), step 2 answers ($0.02).
+    calls.nextToolCall = { toolName: "readFile", input: { filename: "episode-1.md" } };
+    await runTurn([], userTurn("u1", "read episode 1"));
+
+    const reply = (calls.saved as CustomUIMessage[]).find((m) => m.role === "assistant")!;
+    expect(reply.metadata?.usage?.costUsd).toBeCloseTo(0.03);
+    expect(reply.metadata?.usage?.inputTokens).toBe(2);
   });
 });
 

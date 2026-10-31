@@ -10,7 +10,9 @@ import { type ChatRequestOptions } from "ai";
 import { LazyMotion } from "motion/react";
 import dynamic from "next/dynamic";
 import { useMemo } from "react";
+import { formatReplyUsage } from "@workspace/api-routes/lib/chat/reply-usage";
 import {
+  ToolAnalyzeFolder,
   ToolCreateDocument,
   ToolDynamic,
   ToolExtractFromDocuments,
@@ -179,6 +181,9 @@ export const AgentMessage = ({
                   case "tool-fetchWebContent":
                     return <ToolFetchWebContent key={index} part={part} />;
 
+                  case "tool-analyzeFolder":
+                    return <ToolAnalyzeFolder key={index} part={part} />;
+
                   case "tool-readFile":
                     return <ToolReadFile key={index} part={part} />;
 
@@ -227,20 +232,26 @@ export const AgentMessage = ({
                       previousMessageId={previousMessageId}
                     />
 
-                    {/* Display usage information if available */}
-                    {message.metadata?.totalUsage && (
-                      <div className="text-muted-foreground flex items-center gap-2 text-sm">
-                        <span>
-                          Tokens: {message.metadata.totalUsage.totalTokens}
-                        </span>
-                        {message.metadata.totalUsage.inputTokens &&
-                          message.metadata.totalUsage.outputTokens && (
-                            <span className="text-muted-foreground">
-                              (In: {message.metadata.totalUsage.inputTokens},
-                              Out: {message.metadata.totalUsage.outputTokens})
-                            </span>
-                          )}
+                    {message.metadata?.usage ? (
+                      <div className="text-muted-foreground text-sm">
+                        {formatReplyUsage(message.metadata.usage)}
                       </div>
+                    ) : (
+                      // Replies saved before usage covered cache and cost.
+                      message.metadata?.totalUsage && (
+                        <div className="text-muted-foreground flex items-center gap-2 text-sm">
+                          <span>
+                            Tokens: {message.metadata.totalUsage.totalTokens}
+                          </span>
+                          {message.metadata.totalUsage.inputTokens &&
+                            message.metadata.totalUsage.outputTokens && (
+                              <span className="text-muted-foreground">
+                                (In: {message.metadata.totalUsage.inputTokens},
+                                Out: {message.metadata.totalUsage.outputTokens})
+                              </span>
+                            )}
+                        </div>
+                      )
                     )}
                   </div>
                 </>

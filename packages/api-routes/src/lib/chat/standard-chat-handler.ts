@@ -11,7 +11,8 @@ import { inArray } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import { standardSystemPrompt } from "../../providers/prompts.js";
 import { contextOverflowMessage } from "./chat-history.js";
-import { type TurnSpend, turnLimits } from "./stop-conditions.js";
+import { replyUsage } from "./reply-usage.js";
+import { callCost, type TurnSpend, turnLimits } from "./stop-conditions.js";
 import { type Bindings } from "../../types/bindings.js";
 import { type TurnContextSection } from "../../schemas/data-schemas.js";
 import { type CustomUIMessage } from "../../types/custom-ui-message.js";
@@ -377,6 +378,7 @@ export class StandardChatHandler extends ChatHandler {
     // Finish generating even if the client disconnects, so the reply isn't lost.
     this.waitUntil?.(result.consumeStream());
 
+    let stepsCost = 0;
     writer.merge(
       toUIMessageStream<typeof tools, CustomUIMessage>({
         stream: result.stream,
@@ -387,9 +389,14 @@ export class StandardChatHandler extends ChatHandler {
           await this.saveResponseMessages([responseMessage]);
         },
         messageMetadata: ({ part }) => {
-          // Send total usage when generation is finished
+          if (part.type === "finish-step") {
+            stepsCost += callCost(part.providerMetadata);
+          }
+          // Tokens and cost of the whole turn, including tools' model calls.
           if (part.type === "finish") {
-            return { totalUsage: part.totalUsage };
+            return {
+              usage: replyUsage(part.totalUsage, stepsCost + this.spend.tools),
+            };
           }
         },
         sendReasoning: true,
