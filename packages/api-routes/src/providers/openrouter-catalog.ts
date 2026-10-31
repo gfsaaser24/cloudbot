@@ -27,6 +27,9 @@ type OpenRouterModel = {
 };
 
 const CACHE_TTL_MS = 60 * 60 * 1000;
+// Every chat turn waits for the catalog, so a slow models endpoint must not
+// hold it up for long.
+const FETCH_TIMEOUT_MS = 5_000;
 
 let cache: { models: CatalogModel[]; fetchedAt: number } | null = null;
 
@@ -42,7 +45,17 @@ export async function getOpenRouterCatalog(): Promise<CatalogModel[]> {
     return cache.models;
   }
 
-  const response = await fetch("https://openrouter.ai/api/v1/models");
+  let response: Response;
+  try {
+    response = await fetch("https://openrouter.ai/api/v1/models", {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (cache) {
+      return cache.models; // Serve the stale list rather than failing.
+    }
+    throw error;
+  }
   if (!response.ok) {
     if (cache) {
       return cache.models; // Serve the stale list rather than failing.

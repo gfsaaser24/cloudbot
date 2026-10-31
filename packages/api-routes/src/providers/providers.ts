@@ -21,7 +21,9 @@ export interface ModelOptions {
 }
 
 // Anthropic models, including aliases such as "~anthropic/claude-sonnet-latest".
-const ANTHROPIC_MODEL = /^~?anthropic\//;
+export function isAnthropicModel(modelId: string): boolean {
+  return /^~?anthropic\//.test(modelId);
+}
 
 // Room for a long answer even after reasoning, capped by the model's maximum.
 const ANSWER_MAX_TOKENS = 32_000;
@@ -135,7 +137,7 @@ async function openRouterModel(
       // Anthropic needs caching turned on; one hour so a follow-up after a break
       // still hits it. The other providers cache automatically, and on Gemini
       // cache_control would switch on paid explicit caching.
-      ...(ANTHROPIC_MODEL.test(modelId)
+      ...(isAnthropicModel(modelId)
         ? { cache_control: { type: "ephemeral", ttl: "1h" } }
         : {}),
       plugins: [
