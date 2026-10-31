@@ -110,4 +110,43 @@ describe("offloading large message parts", () => {
     await deleteOffloadedParts(bucket, chatId);
     expect([...objects.keys()]).toEqual(["chat-parts/other-chat/m1/0"]);
   });
+
+  it("shows the placeholder when an offloaded part can't be read or parsed", async () => {
+    const { bucket, objects } = fakeBucket();
+    const saved = await offloadLargeParts(bucket, chatId, message([readFileOutput("t1", 3_000_000)]));
+    for (const key of objects.keys()) objects.set(key, "{not json");
+
+    const [restored] = await restoreOffloadedParts(bucket, [saved]);
+    expect(restored?.parts).toEqual([
+      { type: "text", text: "(Part of this message could not be loaded.)" },
+    ]);
+  });
+
+  it("only follows markers that point at chat parts", async () => {
+    const { bucket, objects } = fakeBucket();
+    objects.set("user-1/folder-1/secret.md", JSON.stringify({ type: "text", text: "secret" }));
+    const planted = message([{ type: "data-offloadedPart", data: { key: "user-1/folder-1/secret.md" } }]);
+
+    const [restored] = await restoreOffloadedParts(bucket, [planted]);
+    expect(JSON.stringify(restored)).not.toContain("secret\"");
+    expect(restored?.parts).toEqual([
+      { type: "text", text: "(Part of this message could not be loaded.)" },
+    ]);
+  });
+
+  it("fails the save, without returning markers, when an R2 write fails", async () => {
+    const { bucket } = fakeBucket();
+    const failing = { ...bucket, put: async () => { throw new Error("R2 unavailable"); } } as unknown as PartBucket;
+
+    await expect(
+      offloadLargeParts(failing, chatId, message([readFileOutput("t1", 3_000_000)])),
+    ).rejects.toThrow("R2 unavailable");
+  });
+
+  it("doesn't throw when R2 cleanup fails, so a committed delete still succeeds", async () => {
+    const { bucket } = fakeBucket();
+    const failing = { ...bucket, list: async () => { throw new Error("R2 unavailable"); } } as unknown as PartBucket;
+
+    await expect(deleteOffloadedParts(failing, chatId)).resolves.toBeUndefined();
+  });
 });

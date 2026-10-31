@@ -97,10 +97,27 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>().post(
       messagesToCopy = recentMessages.reverse();
     }
 
+    // Offloaded parts are restored from the source chat and stored again under
+    // the fork, so deleting the source can't break it. This runs before the fork
+    // is created, so an R2 failure can't leave an empty fork behind.
+    const newChatId = crypto.randomUUID();
+    const bucket = c.env.CLOUDBOT_BUCKET;
+    const restored = await restoreOffloadedParts(
+      bucket,
+      messagesToCopy.map((msg) => ({
+        ...msg,
+        id: crypto.randomUUID(),
+      })) as CustomUIMessage[],
+    );
+    const copies = await Promise.all(
+      restored.map((msg) => offloadLargeParts(bucket, newChatId, msg)),
+    );
+
     // Create new chat with "(Fork)" suffix
     const newChatResult = await db()
       .insert(chats)
       .values({
+        id: newChatId,
         userId: user.id,
         title: `${chat.title} (Fork)`,
         isFavourite: false,
@@ -113,21 +130,8 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>().post(
       throw new HTTPException(500, { message: "INTERNAL_SERVER_ERROR" });
     }
 
-    // Copy messages to new chat. Offloaded parts are restored from the source chat
-    // and stored again under the fork, so deleting the source can't break it.
-    if (messagesToCopy.length > 0) {
-      const bucket = c.env.CLOUDBOT_BUCKET;
-      const restored = await restoreOffloadedParts(
-        bucket,
-        messagesToCopy.map((msg) => ({
-          ...msg,
-          id: crypto.randomUUID(),
-        })) as CustomUIMessage[],
-      );
-      const copies = await Promise.all(
-        restored.map((msg) => offloadLargeParts(bucket, newChat.id, msg)),
-      );
-
+    // Copy messages to new chat
+    if (copies.length > 0) {
       const baseCreatedAt = new Date();
       await db()
         .insert(messages)

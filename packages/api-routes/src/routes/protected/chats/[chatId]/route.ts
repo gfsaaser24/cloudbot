@@ -54,11 +54,13 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
       const { chatId } = c.req.valid("param");
       const user = c.get("user");
 
-      const result = await db()
+      // D1 results have no rowCount, so check what was actually deleted.
+      const deleted = await db()
         .delete(chats)
-        .where(and(eq(chats.id, chatId), eq(chats.userId, user.id)));
+        .where(and(eq(chats.id, chatId), eq(chats.userId, user.id)))
+        .returning({ id: chats.id });
 
-      if (result.rowCount === 0) {
+      if (deleted.length === 0) {
         throw new HTTPException(404, { message: "NOT_FOUND" });
       }
       await deleteOffloadedParts(c.env.CLOUDBOT_BUCKET, chatId);

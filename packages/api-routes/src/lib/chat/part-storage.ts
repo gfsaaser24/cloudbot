@@ -31,10 +31,12 @@ const encoder = new TextEncoder();
 const byteLength = (value: unknown) =>
   encoder.encode(JSON.stringify(value)).length;
 
+const ROOT_PREFIX = "chat-parts/";
+
 function partsPrefix(chatId: string, messageId?: string) {
   return messageId
-    ? `chat-parts/${chatId}/${messageId}/`
-    : `chat-parts/${chatId}/`;
+    ? `${ROOT_PREFIX}${chatId}/${messageId}/`
+    : `${ROOT_PREFIX}${chatId}/`;
 }
 
 function isMarker(part: unknown): part is OffloadedPartMarker {
@@ -105,14 +107,26 @@ export async function restoreOffloadedParts(
         parts.map(async (part) => {
           if (!isMarker(part)) return part;
 
-          const object = await bucket.get(part.data.key);
-          if (!object) {
-            logger.error("Offloaded message part is missing", {
-              key: part.data.key,
-            });
+          const { key } = part.data;
+          // Only offloaded chat parts are ever read back, never other objects
+          // in the bucket (such as folder files).
+          if (!key.startsWith(ROOT_PREFIX)) {
+            logger.error("Ignored a marker outside chat parts", { key });
             return { type: "text", text: MISSING_PART_TEXT };
           }
-          return JSON.parse(await object.text()) as unknown;
+
+          try {
+            const object = await bucket.get(key);
+            if (object) return JSON.parse(await object.text()) as unknown;
+            logger.error("Offloaded message part is missing", { key });
+          } catch (error) {
+            logger.error("Offloaded message part could not be read", {
+              key,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+          // One unreadable part must not stop the whole chat from loading.
+          return { type: "text", text: MISSING_PART_TEXT };
         }),
       );
 
@@ -122,6 +136,8 @@ export async function restoreOffloadedParts(
 }
 
 // Deletes the offloaded parts of a whole chat, or of the given messages only.
+// Best effort: it runs after the D1 rows are already gone, so a failure is
+// logged (leaving unreachable objects) rather than failing the delete.
 export async function deleteOffloadedParts(
   bucket: PartBucket,
   chatId: string,
@@ -133,13 +149,20 @@ export async function deleteOffloadedParts(
 
   await Promise.all(
     prefixes.map(async (prefix) => {
-      let cursor: string | undefined;
-      do {
-        const page = await bucket.list({ prefix, cursor });
-        const keys = page.objects.map((object) => object.key);
-        if (keys.length > 0) await bucket.delete(keys);
-        cursor = page.truncated ? page.cursor : undefined;
-      } while (cursor);
+      try {
+        let cursor: string | undefined;
+        do {
+          const page = await bucket.list({ prefix, cursor });
+          const keys = page.objects.map((object) => object.key);
+          if (keys.length > 0) await bucket.delete(keys);
+          cursor = page.truncated ? page.cursor : undefined;
+        } while (cursor);
+      } catch (error) {
+        logger.error("Could not delete offloaded message parts", {
+          prefix,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }),
   );
 }
