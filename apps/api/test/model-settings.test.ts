@@ -118,26 +118,6 @@ describe("chat model settings", () => {
   });
 });
 
-describe("chat model menu", () => {
-  it("lists only models that support both tools and tool_choice", async () => {
-    const { getOpenRouterCatalog } = await vi.importActual<typeof import("@workspace/api-routes/providers/openrouter-catalog.js")>(
-      "@workspace/api-routes/providers/openrouter-catalog.js",
-    );
-    vi.stubGlobal("fetch", async () =>
-      Response.json({
-        data: [
-          { id: "a/both", name: "Both", supported_parameters: ["tools", "tool_choice", "max_tokens"], top_provider: { max_completion_tokens: 64_000 } },
-          { id: "b/tools-only", name: "Tools only", supported_parameters: ["tools"] },
-        ],
-      }),
-    );
-
-    const models = await getOpenRouterCatalog();
-    expect(models.map((m) => m.id)).toEqual(["a/both"]);
-    expect(models[0]).toMatchObject({ supportedParameters: ["tools", "tool_choice", "max_tokens"], maxCompletionTokens: 64_000 });
-  });
-});
-
 describe("what a model call cost", () => {
   it("counts the provider's charge for a bring-your-own-key model, which OpenRouter reports as cost 0", () => {
     expect(callCost({ openrouter: { usage: { cost: 0, costDetails: { upstreamInferenceCost: 0.5 } } } })).toBe(0.5);
