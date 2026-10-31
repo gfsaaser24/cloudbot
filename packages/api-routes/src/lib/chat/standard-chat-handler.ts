@@ -65,12 +65,21 @@ export class StandardChatHandler extends ChatHandler {
     super(env, request, waitUntil);
   }
 
-  private async buildSystemPrompt(): Promise<string> {
-    let finalPrompt = await this.buildBaseSystemPrompt(this.systemPrompt);
+  // The same on every turn, so the provider can reuse its cached prompt.
+  private buildInstructions(): string {
+    return isComposioConfigured()
+      ? this.systemPrompt + composioPrompt
+      : this.systemPrompt;
+  }
 
-    if (isComposioConfigured()) {
-      finalPrompt += composioPrompt;
-    }
+  // What changes from turn to turn (date, location, project, selected
+  // instructions) goes on the new user message and is saved with it, so it
+  // replays unchanged on later turns.
+  private async addTurnContext(): Promise<void> {
+    const lastMessage = this.request.lastMessage;
+    if (lastMessage.role !== "user") return;
+
+    let context = this.buildCurrentContext();
 
     if (this.project) {
       const effectiveFilter = this.getEffectiveContextFilter();
@@ -79,10 +88,9 @@ export class StandardChatHandler extends ChatHandler {
         !!effectiveFilter?.folders.some(
           (f) => f.id === this.project?.folder.id,
         );
-      finalPrompt += buildProjectPrompt(this.project, searchesProject);
+      context += buildProjectPrompt(this.project, searchesProject);
     }
 
-    // Append context filter prompts to the system prompt
     const contextFilter = this.getContextFilter();
     if (contextFilter && contextFilter.prompts.length > 0) {
       const promptIds = contextFilter.prompts.map((p) => p.id);
@@ -92,17 +100,18 @@ export class StandardChatHandler extends ChatHandler {
       });
 
       if (userPrompts.length > 0) {
-        finalPrompt += `\n\n## User-Selected Instructions\n\n`;
-        finalPrompt += `The user has selected the following custom instructions. Follow them carefully:\n\n`;
+        context += `\n\n## User-Selected Instructions\n\n`;
+        context += `The user has selected the following custom instructions. Follow them carefully:\n\n`;
         for (const prompt of userPrompts) {
-          finalPrompt += `### ${prompt.name}\n\n${prompt.content}\n\n`;
+          context += `### ${prompt.name}\n\n${prompt.content}\n\n`;
         }
       }
     }
 
-    logger.info("Final system prompt:\n\n", finalPrompt);
-
-    return finalPrompt;
+    lastMessage.parts.push({
+      type: "data-turnContext",
+      data: { text: `\n\n${context}` },
+    });
   }
 
   // The message's context filter, falling back to the chat's project folder
@@ -166,16 +175,15 @@ export class StandardChatHandler extends ChatHandler {
       ...(await this.composioTools()),
     };
 
-    // Only include extractFromDocuments and readFile if context filter has files or folders
+    // Check permissions and get authorized file metadata
+    let authorizedFileMetadata: FileMetadata[] = [];
+    let authorizedFolderMetadata: FolderMetadata[] = [];
+
     if (
       contextFilter &&
       ((contextFilter.files && contextFilter.files.length > 0) ||
         (contextFilter.folders && contextFilter.folders.length > 0))
     ) {
-      // Check permissions and get authorized file metadata
-      let authorizedFileMetadata: FileMetadata[] = [];
-      let authorizedFolderMetadata: FolderMetadata[] = [];
-
       // Check files if present
       if (contextFilter.files && contextFilter.files.length > 0) {
         const fileIds = contextFilter.files.map((f) => f.id);
@@ -251,31 +259,35 @@ export class StandardChatHandler extends ChatHandler {
           authorizedFileMetadata,
         },
       );
-
-      tools.extractFromDocuments = extractFromDocuments({
-        env: this.env,
-        userId: this.request.user.id,
-        fileMetadata: authorizedFileMetadata,
-        folderMetadata: authorizedFolderMetadata,
-        dataStream: writer,
-      });
-      tools.readFile = readFile({
-        env: this.env,
-        userId: this.request.user.id,
-        fileMetadata: authorizedFileMetadata,
-        folderMetadata: authorizedFolderMetadata,
-      });
     }
 
-    if (this.request.webSearchEnabled) {
-      tools.extractFromWeb = extractFromWeb({
-        env: this.env,
-        userLocation: this.request.userLocation,
-        dataStream: writer,
-      });
-    }
+    // Registered on every turn, even with nothing selected or web search off:
+    // changing the tool list would invalidate the provider's prompt cache.
+    // They explain at call time when their precondition is off.
+    tools.extractFromDocuments = extractFromDocuments({
+      env: this.env,
+      userId: this.request.user.id,
+      fileMetadata: authorizedFileMetadata,
+      folderMetadata: authorizedFolderMetadata,
+      dataStream: writer,
+    });
+    tools.readFile = readFile({
+      env: this.env,
+      userId: this.request.user.id,
+      fileMetadata: authorizedFileMetadata,
+      folderMetadata: authorizedFolderMetadata,
+    });
+    tools.extractFromWeb = extractFromWeb({
+      env: this.env,
+      userLocation: this.request.userLocation,
+      dataStream: writer,
+      enabled: Boolean(this.request.webSearchEnabled),
+    });
 
-    return tools;
+    // A fixed order, so the same tools always produce the same request.
+    return Object.fromEntries(
+      Object.entries(tools).sort(([a], [b]) => a.localeCompare(b)),
+    );
   }
 
   protected async executeChat(
@@ -289,6 +301,7 @@ export class StandardChatHandler extends ChatHandler {
 
     // Integrate attachments and context filter documents into the messages
     await this.integrateContextIntoMessages();
+    await this.addTurnContext();
 
     // Saved after the attachments are added, so later turns replay them as sent.
     // A continuation (an assistant message) is saved by the reply's onEnd.
@@ -296,9 +309,9 @@ export class StandardChatHandler extends ChatHandler {
       await this.saveUserMessage();
     }
 
-    const systemPrompt = await this.buildSystemPrompt();
+    const instructions = this.buildInstructions();
     const streamConfig = await this.buildStreamTextConfig({
-      systemPrompt,
+      systemPrompt: instructions,
     });
     const tools = await this.retrieveToolSet(writer);
 

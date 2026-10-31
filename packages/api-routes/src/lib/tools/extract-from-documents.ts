@@ -68,6 +68,15 @@ export const extractFromDocuments = ({
       query,
       max_num_results,
     }): Promise<z.infer<typeof extractFromDocumentsOutput>> => {
+      // Always offered so the tool list never changes between turns.
+      if (fileMetadata.length === 0 && folderMetadata.length === 0) {
+        return {
+          extractedInformation:
+            "No folder or file is selected for this message, so there is nothing to search. Ask the user to select a folder or file.",
+          sources: [],
+        };
+      }
+
       try {
         // Permissions already checked in standard-chat-handler
         // fileMetadata contains only files the user has access to
