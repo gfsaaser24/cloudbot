@@ -87,6 +87,7 @@ export abstract class ChatHandler {
     logger.debug("Saving user message", { chatId: this.request.id });
 
     await saveMessages({
+      bucket: this.env.CLOUDBOT_BUCKET,
       chatId: this.request.id,
       newMessages: [this.request.lastMessage],
     });
@@ -103,6 +104,7 @@ export abstract class ChatHandler {
     });
 
     await saveMessages({
+      bucket: this.env.CLOUDBOT_BUCKET,
       chatId: this.request.id,
       newMessages: messages.map(omitDocumentText),
     });

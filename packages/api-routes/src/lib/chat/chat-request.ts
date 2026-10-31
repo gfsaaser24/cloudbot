@@ -148,6 +148,7 @@ export class ChatRequest {
 
       // Load previous messages
       prevMessages = await getMessagesByChatId({
+        bucket: c.env.CLOUDBOT_BUCKET,
         chatId: id,
         messageCount: messageCount ? Math.min(messageCount, 12) : 12,
       });

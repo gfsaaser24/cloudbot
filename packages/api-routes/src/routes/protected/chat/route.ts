@@ -1,6 +1,7 @@
 import * as z from "zod";
 
 import { ChatHandlerFactory } from "@workspace/api-routes/lib/chat/index.js";
+import { deleteOffloadedParts } from "@workspace/api-routes/lib/chat/part-storage.js";
 import {
   deleteChatById,
   getChatById,
@@ -81,6 +82,7 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
       }
 
       await deleteChatById({ id });
+      await deleteOffloadedParts(c.env.CLOUDBOT_BUCKET, id);
 
       return c.json({ message: "Chat deleted" });
     },

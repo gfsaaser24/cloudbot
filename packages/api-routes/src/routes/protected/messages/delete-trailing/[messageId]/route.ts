@@ -1,5 +1,6 @@
 import * as z from "zod";
 
+import { deleteOffloadedParts } from "@workspace/api-routes/lib/chat/part-storage.js";
 import { uuidSchema } from "@workspace/api-routes/schemas/uuid-schema.js";
 import { type Bindings } from "@workspace/api-routes/types/bindings.js";
 import { type Variables } from "@workspace/api-routes/types/variables.js";
@@ -41,14 +42,20 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>().delete(
       throw new HTTPException(404, { message: "NOT_FOUND" });
     }
 
-    await db()
+    const deleted = await db()
       .delete(messages)
       .where(
         and(
           eq(messages.chatId, messageData.chatId),
           gte(messages.createdAt, messageData.createdAt),
         ),
-      );
+      )
+      .returning({ id: messages.id });
+    await deleteOffloadedParts(
+      c.env.CLOUDBOT_BUCKET,
+      messageData.chatId,
+      deleted.map((m) => m.id),
+    );
 
     return c.json({ message: "Trailing messages deleted" });
   },

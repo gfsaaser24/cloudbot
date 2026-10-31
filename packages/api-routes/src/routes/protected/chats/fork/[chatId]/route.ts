@@ -1,8 +1,13 @@
 import * as z from "zod";
 
+import {
+  offloadLargeParts,
+  restoreOffloadedParts,
+} from "@workspace/api-routes/lib/chat/part-storage.js";
 import { getChatById } from "@workspace/api-routes/lib/queries/chats.js";
 import { uuidSchema } from "@workspace/api-routes/schemas/uuid-schema.js";
 import { type Bindings } from "@workspace/api-routes/types/bindings.js";
+import { type CustomUIMessage } from "@workspace/api-routes/types/custom-ui-message.js";
 import { type Variables } from "@workspace/api-routes/types/variables.js";
 import { db } from "@workspace/server/drizzle/db.js";
 import { chats, messages } from "@workspace/server/drizzle/schema.js";
@@ -92,10 +97,27 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>().post(
       messagesToCopy = recentMessages.reverse();
     }
 
+    // Offloaded parts are restored from the source chat and stored again under
+    // the fork, so deleting the source can't break it. This runs before the fork
+    // is created, so an R2 failure can't leave an empty fork behind.
+    const newChatId = crypto.randomUUID();
+    const bucket = c.env.CLOUDBOT_BUCKET;
+    const restored = await restoreOffloadedParts(
+      bucket,
+      messagesToCopy.map((msg) => ({
+        ...msg,
+        id: crypto.randomUUID(),
+      })) as CustomUIMessage[],
+    );
+    const copies = await Promise.all(
+      restored.map((msg) => offloadLargeParts(bucket, newChatId, msg)),
+    );
+
     // Create new chat with "(Fork)" suffix
     const newChatResult = await db()
       .insert(chats)
       .values({
+        id: newChatId,
         userId: user.id,
         title: `${chat.title} (Fork)`,
         isFavourite: false,
@@ -109,12 +131,13 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>().post(
     }
 
     // Copy messages to new chat
-    if (messagesToCopy.length > 0) {
+    if (copies.length > 0) {
       const baseCreatedAt = new Date();
       await db()
         .insert(messages)
         .values(
-          messagesToCopy.map((msg, index) => ({
+          copies.map((msg, index) => ({
+            id: msg.id,
             chatId: newChat.id,
             role: msg.role,
             parts: msg.parts,
