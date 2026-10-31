@@ -57,7 +57,8 @@ export const updateDocument = ({
       try {
         const document = await getDocumentById({ id });
 
-        if (!document) {
+        // Another user's document reads as missing, as with messages and files.
+        if (!document || document.owner !== userId) {
           throw new Error("Document not found");
         }
 
