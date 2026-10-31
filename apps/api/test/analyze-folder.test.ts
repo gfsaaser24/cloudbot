@@ -14,6 +14,8 @@ const state = vi.hoisted(() => ({
   total: 0,
   // Files whose extraction fails.
   failing: new Set<string>(),
+  // How long each extracted value is.
+  valueLength: 0,
 }));
 
 vi.mock("@workspace/server/drizzle/db.js", () => ({
@@ -40,7 +42,12 @@ vi.mock("@workspace/api-routes/providers/providers.js", async (importActual) => 
         const filename = /Document \\"([^"\\]+)\\"/.exec(text)?.[1] ?? "?";
         if (state.failing.has(filename)) throw new Error("model error");
         return {
-          content: [{ type: "text", text: JSON.stringify({ pricing: `from ${filename}` }) }],
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ pricing: state.valueLength ? "v".repeat(state.valueLength) : `from ${filename}` }),
+            },
+          ],
           finishReason: { unified: "stop", raw: "stop" },
           usage: {
             inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
@@ -87,6 +94,7 @@ beforeEach(() => {
   state.rows = [];
   state.total = 0;
   state.failing = new Set();
+  state.valueLength = 0;
 });
 
 describe("analyzeFolder", () => {
@@ -145,5 +153,15 @@ describe("analyzeFolder", () => {
 
     const { toolSpend } = await run();
     expect(toolSpend.usd).toBeCloseTo(3 * COST_PER_FILE);
+  });
+
+  it("keeps a large table within about 100,000 characters", async () => {
+    state.rows = Array.from({ length: 100 }, (_, i) => transcript(i + 1));
+    state.total = 100;
+    state.valueLength = 5_000;
+
+    const { final } = await run();
+    expect(final.rows).toHaveLength(100);
+    expect(JSON.stringify(final.rows).length).toBeLessThan(110_000);
   });
 });

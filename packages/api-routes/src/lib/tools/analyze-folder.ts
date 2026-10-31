@@ -13,7 +13,7 @@ import { readSelectedFileText } from "./read-file.js";
 
 // Answers questions across many documents ("how many guests charged from day
 // one?") by extracting the same fields from every file with a cheap model,
-// eight files at a time, and handing back one table the chat model can count
+// several files at a time, and handing back one table the chat model can count
 // and quote from.
 
 const logger = createLogger("analyze-folder");
@@ -22,8 +22,12 @@ const MAX_FILES = 100;
 const CONCURRENCY = 8;
 // The extraction model reads at most this much of each file.
 const MAX_FILE_CHARS = 400_000;
-// Each extracted value, so a run of 100 files stays readable in the history.
+// The table stays in the history for good, so it is capped as a whole: each
+// value gets an equal share, at most MAX_VALUE_CHARS.
 const MAX_VALUE_CHARS = 1_500;
+const TABLE_CHARS = 100_000;
+// Each row's filename, folder id and JSON keys.
+const ROW_OVERHEAD_CHARS = 200;
 
 export const analyzeFolderInput = z.object({
   fields: z
@@ -60,9 +64,11 @@ export const analyzeFolderOutput = z.object({
   message: z.string().optional(),
 });
 
-type Output = z.infer<typeof analyzeFolderOutput>;
+type AnalyzeFolderOutput = z.infer<typeof analyzeFolderOutput>;
 type Row = z.infer<typeof row>;
 type ScopedFile = { name: string; visibility: string; folderId: string };
+
+const byName = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 type Props = {
   env: Bindings;
@@ -84,7 +90,7 @@ async function filesInScope(
   if (fileMetadata.length > 0) {
     const selected = fileMetadata
       .filter((f) => wanted(f.name))
-      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+      .sort((a, b) => byName(a.name, b.name));
     return {
       files: selected.slice(0, MAX_FILES),
       skipped: Math.max(selected.length - MAX_FILES, 0),
@@ -130,7 +136,7 @@ export const analyzeFolder = ({ env, userId, fileMetadata, folderMetadata, toolS
       "Extracts the same fields from every selected file (up to 100) and returns one row per file, so you can count, compare and quote across many documents, e.g. which guests mentioned pricing and how. Use it for questions about all or many files; use readFile or extractFromDocuments for one or a few. Name each field and describe what to extract.",
     inputSchema: analyzeFolderInput,
     outputSchema: analyzeFolderOutput,
-    async *execute({ fields, filenames }): AsyncGenerator<Output> {
+    async *execute({ fields, filenames }): AsyncGenerator<AnalyzeFolderOutput> {
       // Always offered so the tool list never changes between turns.
       if (fileMetadata.length === 0 && folderMetadata.length === 0) {
         yield {
@@ -147,9 +153,26 @@ export const analyzeFolder = ({ env, userId, fileMetadata, folderMetadata, toolS
 
       const scope = await filesInScope({ fileMetadata, folderMetadata }, filenames);
       const total = scope.files.length;
+      if (total === 0) {
+        yield {
+          status: "done",
+          completed: 0,
+          total: 0,
+          rows: [],
+          skipped: 0,
+          message: "None of the selected files match, so there is nothing to analyze.",
+        };
+        return;
+      }
+
       const schema = fieldSchema(fields);
       const model = await getExtractionModel(userId);
-      const rows: Row[] = [];
+      const valueChars = Math.min(
+        MAX_VALUE_CHARS,
+        Math.floor(
+          (TABLE_CHARS - total * ROW_OVERHEAD_CHARS) / (fields.length * total),
+        ),
+      );
 
       const extract = async (file: ScopedFile): Promise<Row> => {
         const base = { filename: file.name, folderId: file.folderId };
@@ -169,7 +192,7 @@ export const analyzeFolder = ({ env, userId, fileMetadata, folderMetadata, toolS
           const values = Object.fromEntries(
             Object.entries(result.output).map(([name, value]) => [
               name,
-              String(value).slice(0, MAX_VALUE_CHARS),
+              String(value).slice(0, valueChars),
             ]),
           );
           return { ...base, values };
@@ -182,34 +205,28 @@ export const analyzeFolder = ({ env, userId, fileMetadata, folderMetadata, toolS
         }
       };
 
-      // Eight at a time; each finished file is reported as it completes.
-      const queue = [...scope.files];
-      const finished: Row[] = [];
-      let notify: (() => void) | undefined;
-      const worker = async () => {
-        for (let file = queue.shift(); file; file = queue.shift()) {
-          finished.push(await extract(file));
-          notify?.();
-        }
+      // CONCURRENCY files at a time; each finished file is reported as it
+      // completes.
+      const rows: Row[] = [];
+      const running = new Map<number, Promise<[number, Row]>>();
+      let next = 0;
+      const startNext = () => {
+        const index = next++;
+        running.set(index, extract(scope.files[index]!).then((done) => [index, done]));
       };
-      const workers = Promise.all(Array.from({ length: Math.min(CONCURRENCY, total) }, worker));
+      while (next < Math.min(CONCURRENCY, total)) startNext();
 
-      while (rows.length < total) {
-        if (finished.length === 0) {
-          await new Promise<void>((resolve) => (notify = resolve));
-          notify = undefined;
-          continue;
-        }
-        for (const done of finished.splice(0)) {
-          rows.push(done);
-          if (rows.length < total) {
-            yield { status: "running", completed: rows.length, total, rows: [], skipped: scope.skipped };
-          }
+      while (running.size > 0) {
+        const [index, done] = await Promise.race(running.values());
+        running.delete(index);
+        rows.push(done);
+        if (next < total) startNext();
+        if (rows.length < total) {
+          yield { status: "running", completed: rows.length, total, rows: [], skipped: scope.skipped };
         }
       }
-      await workers;
 
-      rows.sort((a, b) => (a.filename < b.filename ? -1 : a.filename > b.filename ? 1 : 0));
+      rows.sort((a, b) => byName(a.filename, b.filename));
       const failed = rows.filter((r) => r.error).length;
       yield {
         status: "done",
