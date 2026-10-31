@@ -22,4 +22,7 @@ export const dataSchemas = {
   }),
   fileGenerating: z.string(),
   fileGenerated: z.string(),
+  // Attachment and referenced-document text the server adds to a user message.
+  // Saved with the message so later turns replay it; the bubble doesn't show it.
+  attachmentText: z.object({ text: z.string() }).strict(),
 };

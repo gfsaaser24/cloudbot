@@ -1,6 +1,6 @@
 import { db } from "@workspace/server/drizzle/db.js";
 import { messages } from "@workspace/server/drizzle/schema.js";
-import { desc, eq, inArray, sql } from "drizzle-orm";
+import { asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import {
   offloadLargeParts,
@@ -22,21 +22,19 @@ export async function getMessageById({ messageId }: { messageId: string }) {
   return result[0];
 }
 
+// The whole chat, oldest first.
 export async function getMessagesByChatId({
   bucket,
   chatId,
-  messageCount,
 }: {
   bucket: PartBucket;
   chatId: string;
-  messageCount: number;
 }) {
   const rows = (await db()
     .select()
     .from(messages)
     .where(eq(messages.chatId, chatId))
-    .orderBy(desc(messages.createdAt))
-    .limit(messageCount)) as CustomUIMessage[];
+    .orderBy(asc(messages.createdAt))) as CustomUIMessage[];
   return restoreOffloadedParts(bucket, rows);
 }
 

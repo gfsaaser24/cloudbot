@@ -11,6 +11,7 @@ import {
 import { inArray } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import { standardSystemPrompt } from "../../providers/prompts.js";
+import { contextOverflowMessage } from "./chat-history.js";
 import { type Bindings } from "../../types/bindings.js";
 import { type CustomUIMessage } from "../../types/custom-ui-message.js";
 import {
@@ -289,6 +290,12 @@ export class StandardChatHandler extends ChatHandler {
     // Integrate attachments and context filter documents into the messages
     await this.integrateContextIntoMessages();
 
+    // Saved after the attachments are added, so later turns replay them as sent.
+    // A continuation (an assistant message) is saved by the reply's onEnd.
+    if (!this.request.isTemporary && this.request.lastMessage.role === "user") {
+      await this.saveUserMessage();
+    }
+
     const systemPrompt = await this.buildSystemPrompt();
     const streamConfig = await this.buildStreamTextConfig({
       systemPrompt,
@@ -312,6 +319,8 @@ export class StandardChatHandler extends ChatHandler {
     writer.merge(
       toUIMessageStream<typeof tools, CustomUIMessage>({
         stream: result.stream,
+        // The full conversation, so a continuation updates its message in place.
+        originalMessages: this.request.messages,
         generateMessageId: generateUUID,
         onEnd: async ({ responseMessage }) => {
           await this.saveResponseMessages([responseMessage]);
@@ -331,6 +340,9 @@ export class StandardChatHandler extends ChatHandler {
 
   protected handleError(error: unknown): string {
     logger.error("Error in chat route", error);
+
+    const overflow = contextOverflowMessage(error, this.request.model);
+    if (overflow) return overflow;
 
     const detail = error instanceof Error ? error.message : String(error);
     return `Something went wrong: ${detail.slice(0, 300)}`;
