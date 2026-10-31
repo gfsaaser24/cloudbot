@@ -35,6 +35,39 @@ function subject(input: FirecrawlToolPart["input"]): string | undefined {
   return Array.isArray(urls) ? `${urls.length} URLs` : undefined;
 }
 
+// What an approval would spend, so the user can judge it.
+function approvalDetail(
+  name: FirecrawlToolName,
+  input: FirecrawlToolPart["input"],
+): string | undefined {
+  if (!input || typeof input !== "object") return undefined;
+  const fields = input as Record<string, unknown>;
+  switch (name) {
+    case "firecrawlCrawl":
+      return `Up to ${Math.min(Number(fields.limit ?? 20), 100)} pages.`;
+    case "firecrawlBatchScrape":
+      return `${Math.min((fields.urls as unknown[] | undefined)?.length ?? 0, 100)} pages.`;
+    case "firecrawlAgent":
+      return `Up to ${Math.min(Number(fields.maxCredits ?? 200), 500)} credits.`;
+    case "firecrawlInteract":
+      return `A live browser session for up to ${Math.round(Number(fields.ttlSeconds ?? 600) / 60)} minutes.`;
+    case "firecrawlMonitor": {
+      const schedule = fields.schedule as { text?: string; cron?: string } | undefined;
+      const targets = (fields.targets as unknown[] | undefined)?.length;
+      return [
+        `${String(fields.action)} a monitor`,
+        schedule ? `running ${schedule.text ?? schedule.cron}` : undefined,
+        targets ? `${targets} targets per check` : undefined,
+      ]
+        .filter(Boolean)
+        .join(", ")
+        .concat(".");
+    }
+    default:
+      return undefined;
+  }
+}
+
 export function ToolFirecrawl({ part }: { part: FirecrawlToolPart }) {
   const respond = useToolApproval();
   const name = part.type.slice("tool-".length) as FirecrawlToolName;
@@ -57,7 +90,8 @@ export function ToolFirecrawl({ part }: { part: FirecrawlToolPart }) {
       {part.state === "approval-requested" && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <span className="text-sm">
-            This can use many Firecrawl credits. Run it?
+            {approvalDetail(name, part.input)} This can use many Firecrawl
+            credits. Run it?
           </span>
           <Button size="sm" onClick={() => respond(part.approval.id, true)}>
             Run

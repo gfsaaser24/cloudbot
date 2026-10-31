@@ -21,6 +21,7 @@ const MAX_CRAWL_PAGES = 100;
 const MAX_BATCH_URLS = 100;
 const MAX_AGENT_CREDITS = 500;
 const MAX_MAP_LINKS = 1_000;
+const MAX_MONITOR_TARGETS = 20;
 // Browser sessions bill while open; one the model forgets to stop ends itself.
 const DEFAULT_SESSION_SECONDS = 600;
 
@@ -285,6 +286,8 @@ function paperUrl(paperId: string, primaryId?: string): string {
 async function searchOne(
   source: z.infer<typeof searchSource>,
   input: z.infer<typeof firecrawlSearchInput>,
+  // How much of each scraped result's page fits in the list.
+  contentChars: number,
 ): Promise<FirecrawlResponse<SearchResult[]>> {
   const { query, limit } = input;
 
@@ -368,7 +371,7 @@ async function searchOne(
           title: item.title ?? url,
           url,
           excerpt: clip(item.description ?? item.snippet, EXCERPT_CHARS),
-          ...(item.markdown ? { content: clip(item.markdown, LIST_CHARS / limit) } : {}),
+          ...(item.markdown ? { content: clip(item.markdown, contentChars) } : {}),
         },
       ];
     }),
@@ -440,18 +443,43 @@ const monitorAction = z.enum(["list", "get", "create", "update", "delete", "run"
 const MONITOR_ACTIONS_NEEDING_APPROVAL: ReadonlySet<z.infer<typeof monitorAction>> =
   new Set(["create", "update", "delete", "run"]);
 
+// A monitor runs its targets on every check, so they get the same caps as a
+// one-off crawl or batch scrape.
 const monitorTarget = z.union([
-  z.object({ type: z.literal("scrape"), urls: z.array(z.url()).min(1) }),
+  z.object({
+    type: z.literal("scrape"),
+    urls: z.array(z.url()).min(1).max(MAX_BATCH_URLS),
+  }),
   z.object({
     type: z.literal("crawl"),
     url: z.url(),
-    crawlOptions: z.record(z.string(), z.unknown()).optional(),
+    crawlOptions: z
+      .object({
+        limit: z.number().int().min(1).max(MAX_CRAWL_PAGES).default(20),
+        maxDiscoveryDepth: z.number().int().min(1).optional(),
+        includePaths: z.array(z.string()).optional(),
+        excludePaths: z.array(z.string()).optional(),
+      })
+      .optional(),
   }),
   z.object({
     type: z.literal("search"),
     queries: z.array(z.string().min(1).max(256)).min(1).max(12),
   }),
 ]);
+
+type Monitor = {
+  id?: string;
+  name?: string;
+  webhook?: unknown;
+  notification?: unknown;
+  [field: string]: unknown;
+};
+
+// A monitor as the model sees it: without its delivery settings.
+function forModel({ webhook: _webhook, notification: _notification, ...monitor }: Monitor) {
+  return monitor;
+}
 
 // ---------------------------------------------------------------- tools
 
@@ -542,7 +570,7 @@ export const firecrawlInputs = {
       })
       .optional(),
     goal: z.string().optional().describe("What changes or results to alert on."),
-    targets: z.array(monitorTarget).optional(),
+    targets: z.array(monitorTarget).max(MAX_MONITOR_TARGETS).optional(),
     retentionDays: z.number().int().min(1).max(365).optional(),
   }),
   firecrawlCreditUsage: z.object({}),
@@ -589,8 +617,14 @@ export function firecrawlTools({ env, userId, enabled, fileMetadata, folderMetad
       outputSchema: firecrawlOutput,
       execute: async (input): Promise<FirecrawlOutput> => {
         if (!enabled) return WEB_OFF;
+        const sources = [...new Set(input.sources)];
+        // Room for every result's page, with space left for titles and links.
+        const contentChars = Math.min(
+          PAGE_CHARS,
+          Math.floor(LIST_CHARS / (input.limit * sources.length + 1)),
+        );
         const responses = await Promise.all(
-          [...new Set(input.sources)].map((source) => searchOne(source, input)),
+          sources.map((source) => searchOne(source, input, contentChars)),
         );
         const errors = responses.flatMap((r) => (r.ok ? [] : [r.error]));
         const results = responses.flatMap((r) => (r.ok ? r.data : []));
@@ -784,6 +818,8 @@ export function firecrawlTools({ env, userId, enabled, fileMetadata, folderMetad
           error?: string;
         }>("POST", `/interact/${input.sessionId}/execute`, {
           body: { code: input.code, language: input.language, timeout: input.timeoutSeconds },
+          // The code may run for up to its own timeout, plus time to report back.
+          timeoutMs: ((input.timeoutSeconds ?? 30) + 30) * 1000,
         });
         if (!result.ok) return failed(result.error);
         const run = result.data;
@@ -820,7 +856,10 @@ export function firecrawlTools({ env, userId, enabled, fileMetadata, folderMetad
         const form = new FormData();
         form.append("file", new Blob([await object.arrayBuffer()]), file.name);
         form.append("options", JSON.stringify({ formats: ["markdown"] }));
-        const result = await firecrawlRequest<{ data?: ScrapeData }>("POST", "/parse", { form });
+        const result = await firecrawlRequest<{ data?: ScrapeData }>("POST", "/parse", {
+          form,
+          timeoutMs: 300_000,
+        });
         if (!result.ok) return failed(result.error);
 
         return {
@@ -844,36 +883,68 @@ export function firecrawlTools({ env, userId, enabled, fileMetadata, folderMetad
       execute: async (input): Promise<FirecrawlOutput> => {
         if (!enabled) return WEB_OFF;
         const { action, monitorId, checkId, ...fields } = input;
-        if (action !== "list" && action !== "create" && !monitorId) {
-          return failed(`${action} needs a monitorId; list the monitors to find it.`);
+        // Every CloudChat user shares one Firecrawl account, so each monitor's
+        // name carries its owner and a user only ever sees their own.
+        const owner = `[cloudchat:${userId}]`;
+        const named = (name: string | undefined) =>
+          name === undefined ? {} : { name: `${owner} ${name}` };
+
+        if (action === "list") {
+          const result = await firecrawlRequest<{ data?: Monitor[] }>("GET", "/monitor", {
+            query: { limit: 100 },
+          });
+          if (!result.ok) return failed(result.error);
+          const mine = (result.data.data ?? []).filter((m) => m.name?.startsWith(owner)).map(forModel);
+          return {
+            ok: true,
+            summary: `${mine.length} monitors.`,
+            data: clipJson(mine, LIST_CHARS),
+          };
         }
 
-        const path = monitorId ? `/monitor/${monitorId}` : "/monitor";
-        const request = {
-          list: () => firecrawlRequest<unknown>("GET", "/monitor"),
-          get: () => firecrawlRequest<unknown>("GET", path),
-          create: () => firecrawlRequest<unknown>("POST", "/monitor", { body: fields }),
-          update: () => firecrawlRequest<unknown>("PATCH", path, { body: fields }),
+        if (action === "create") {
+          const result = await firecrawlRequest<{ data?: Monitor }>("POST", "/monitor", {
+            body: { ...fields, ...named(fields.name ?? "Monitor") },
+          });
+          if (!result.ok) return failed(result.error);
+          const monitor = result.data.data;
+          return {
+            ok: true,
+            id: monitor?.id,
+            summary: `Monitor created${monitor?.id ? `: ${monitor.id}` : ""}.`,
+            data: monitor ? forModel(monitor) : undefined,
+          };
+        }
+
+        if (!monitorId) {
+          return failed(`${action} needs a monitorId; list the monitors to find it.`);
+        }
+        const path = `/monitor/${monitorId}`;
+        const existing = await firecrawlRequest<{ data?: Monitor }>("GET", path);
+        if (!existing.ok) return failed(existing.error);
+        if (!existing.data.data?.name?.startsWith(owner)) {
+          return failed("No monitor with that id.");
+        }
+
+        const result = await {
+          get: () => Promise.resolve(existing),
+          update: () => firecrawlRequest<unknown>("PATCH", path, { body: { ...fields, ...named(fields.name) } }),
           delete: () => firecrawlRequest<unknown>("DELETE", path),
           run: () => firecrawlRequest<unknown>("POST", `${path}/run`),
           checks: () =>
             firecrawlRequest<unknown>("GET", checkId ? `${path}/checks/${checkId}` : `${path}/checks`),
-        }[action];
-
-        const result = await request();
+        }[action]();
         if (!result.ok) return failed(result.error);
-        const created =
-          action === "create" &&
-          typeof result.data === "object" &&
-          result.data !== null &&
-          "data" in result.data
-            ? (result.data.data as { id?: string } | undefined)?.id
-            : undefined;
+
+        const data =
+          action === "get" || action === "update"
+            ? forModel((result.data as { data?: Monitor }).data ?? {})
+            : result.data;
         return {
           ok: true,
-          id: created ?? monitorId,
-          summary: `Monitor ${action} done${created ? `: ${created}` : ""}.`,
-          data: clipJson(result.data, LIST_CHARS),
+          id: monitorId,
+          summary: `Monitor ${action} done.`,
+          data: clipJson(data, LIST_CHARS),
         };
       },
     }),

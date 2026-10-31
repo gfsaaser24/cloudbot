@@ -1,9 +1,16 @@
-import { firecrawlTools } from "@workspace/api-routes/lib/tools/firecrawl-tools.js";
+import { firecrawlInputs, firecrawlTools } from "@workspace/api-routes/lib/tools/firecrawl-tools.js";
 import { type Bindings } from "@workspace/api-routes/types/bindings.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Every Firecrawl v2 capability is a tool. Costly ones ask first and run under
 // caps, and every result is kept small enough to stay in the history for good.
+
+// The selected-file lookup reads the files table.
+const filesTable = vi.hoisted(() => ({ rows: [] as { name: string; visibility: string; folderId: string }[] }));
+
+vi.mock("@workspace/server/drizzle/db.js", () => ({
+  db: () => ({ select: () => ({ from: () => ({ where: async () => filesTable.rows }) }) }),
+}));
 
 type Call = { method: string; url: URL; body: unknown; auth: string | null };
 
@@ -151,5 +158,129 @@ describe("firecrawl tools", () => {
 
     expect(await needs("create")).toBe(true);
     expect(await needs("list")).toBe(false);
+  });
+
+  it("needs approval for every costly action only while web search is on", async () => {
+    const on = tools();
+    const off = tools(false);
+    expect([on.firecrawlCrawl, on.firecrawlBatchScrape, on.firecrawlAgent].map((t) => t.needsApproval)).toEqual([true, true, true]);
+    expect([off.firecrawlCrawl, off.firecrawlBatchScrape, off.firecrawlAgent].map((t) => t.needsApproval)).toEqual([false, false, false]);
+
+    const monitor = on.firecrawlMonitor.needsApproval;
+    const asked = async (action: "list" | "get" | "create" | "update" | "delete" | "run" | "checks") =>
+      typeof monitor === "function" && (await monitor({ action }, options));
+    expect(await Promise.all((["create", "update", "delete", "run"] as const).map(asked))).toEqual([true, true, true, true]);
+    expect(await Promise.all((["list", "get", "checks"] as const).map(asked))).toEqual([false, false, false]);
+  });
+
+  it("sends at most 100 URLs in a batch, and ends a forgotten browser session after 10 minutes", async () => {
+    respond = () => Response.json({ success: true, id: "job-1" });
+    const urls = Array.from({ length: 250 }, (_, i) => `https://a.com/${i}`);
+
+    const batch = await tools().firecrawlBatchScrape.execute!({ urls }, options);
+    expect((calls[0]!.body as { urls: string[] }).urls).toHaveLength(100);
+    expect(batch.summary).toContain("150");
+
+    await tools().firecrawlInteract.execute!({ action: "start" }, options);
+    expect(calls[1]!.body).toMatchObject({ ttl: 600 });
+  });
+
+  it("caps what a monitor may crawl or scrape on every check", () => {
+    const monitor = firecrawlInputs.firecrawlMonitor;
+    const crawlTarget = (limit: number) => ({ action: "create", targets: [{ type: "crawl", url: "https://a.com", crawlOptions: { limit } }] });
+
+    expect(monitor.safeParse(crawlTarget(100)).success).toBe(true);
+    expect(monitor.safeParse(crawlTarget(500)).success).toBe(false);
+    const manyUrls = Array.from({ length: 101 }, (_, i) => `https://a.com/${i}`);
+    expect(monitor.safeParse({ action: "create", targets: [{ type: "scrape", urls: manyUrls }] }).success).toBe(false);
+  });
+
+  it("only accepts plain ids, so an id can't change the API path", () => {
+    for (const id of ["../x", "a/b", "a?b=1", "%2e%2e", "", "x".repeat(101)]) {
+      expect(firecrawlInputs.firecrawlJobStatus.safeParse({ kind: "crawl", id }).success).toBe(false);
+      expect(firecrawlInputs.firecrawlInteract.safeParse({ action: "stop", sessionId: id }).success).toBe(false);
+    }
+    expect(firecrawlInputs.firecrawlJobStatus.safeParse({ kind: "crawl", id: "019a2b3c-4d5e-7f00-8a9b-0c1d2e3f4a5b" }).success).toBe(true);
+  });
+
+  it("keeps a long scraped search result instead of dropping it", async () => {
+    respond = () => Response.json({ success: true, data: { web: [{ url: "https://a.com", title: "A", markdown: "z".repeat(200_000) }] } });
+
+    const output = await tools().firecrawlSearch.execute!({ query: "a", sources: ["web"], limit: 1, scrapeResults: true }, options);
+    expect(output.links).toHaveLength(1);
+    expect(JSON.stringify(output).length).toBeLessThanOrEqual(100_000);
+  });
+});
+
+describe("monitors on the shared Firecrawl account", () => {
+  const monitor = (id: string, owner: string) => ({ id, name: `[cloudchat:${owner}] Price watch`, webhook: { url: "https://hook" } });
+
+  it("lists only the user's own monitors, without their delivery settings", async () => {
+    respond = () => Response.json({ success: true, data: [monitor("m1", "user-1"), monitor("m2", "user-2")] });
+
+    const output = await tools().firecrawlMonitor.execute!({ action: "list" }, options);
+    expect(JSON.stringify(output.data)).toContain("m1");
+    expect(JSON.stringify(output.data)).not.toContain("m2");
+    expect(JSON.stringify(output.data)).not.toContain("hook");
+  });
+
+  it("refuses to change another user's monitor", async () => {
+    respond = () => Response.json({ success: true, data: monitor("m2", "user-2") });
+
+    const output = await tools().firecrawlMonitor.execute!({ action: "delete", monitorId: "m2" }, options);
+    expect(output).toMatchObject({ ok: false, summary: "No monitor with that id." });
+    expect(calls.map((c) => c.method)).toEqual(["GET"]);
+  });
+
+  it("records the owner in a new monitor's name", async () => {
+    respond = () => Response.json({ success: true, data: { id: "m3" } });
+
+    await tools().firecrawlMonitor.execute!({ action: "create", name: "Price watch" }, options);
+    expect(calls[0]!.body).toMatchObject({ name: "[cloudchat:user-1] Price watch" });
+  });
+});
+
+describe("parsing a selected file", () => {
+  const folder = "00000000-0000-4000-8000-0000000000aa";
+  const selection = { fileMetadata: [], folderMetadata: [{ id: folder, visibility: "private", folderId: folder, owner: "user-1" }] };
+
+  function parseTool(objects: Record<string, string>, enabled = true) {
+    const get = vi.fn(async (key: string) =>
+      key in objects ? { arrayBuffer: async () => new TextEncoder().encode(objects[key]).buffer } : null,
+    );
+    const env = { CLOUDBOT_BUCKET: { get } } as unknown as Bindings;
+    return { get, tool: firecrawlTools({ env, userId: "user-1", enabled, ...selection } as Parameters<typeof firecrawlTools>[0]).firecrawlParse };
+  }
+
+  it("uploads the user's own copy of the file and returns its text, capped", async () => {
+    filesTable.rows = [{ name: "deck.pdf", visibility: "private", folderId: folder }];
+    respond = () => Response.json({ success: true, data: { markdown: "q".repeat(300_000) } });
+    const { get, tool } = parseTool({ [`user-1/${folder}/deck.pdf`]: "%PDF" });
+
+    const output = await tool.execute!({ filename: "deck.pdf" }, options);
+
+    expect(get).toHaveBeenCalledWith(`user-1/${folder}/deck.pdf`);
+    expect(calls[0]!.url.pathname).toBe("/v2/parse");
+    expect((calls[0]!.body as FormData).get("file")).toBeInstanceOf(Blob);
+    expect(output.ok).toBe(true);
+    expect(JSON.stringify(output.data).length).toBeLessThanOrEqual(61_000);
+  });
+
+  it("uploads nothing for a file outside the selection", async () => {
+    filesTable.rows = [];
+    const { get, tool } = parseTool({});
+
+    const output = await tool.execute!({ filename: "other.pdf" }, options);
+    expect(output.ok).toBe(false);
+    expect(get).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(0);
+  });
+
+  it("uploads nothing when web search is off", async () => {
+    filesTable.rows = [{ name: "deck.pdf", visibility: "private", folderId: folder }];
+    const { get, tool } = parseTool({}, false);
+
+    expect((await tool.execute!({ filename: "deck.pdf" }, options)).summary).toMatch(/web search is turned off/i);
+    expect(get).not.toHaveBeenCalled();
   });
 });

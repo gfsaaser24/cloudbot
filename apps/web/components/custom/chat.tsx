@@ -84,7 +84,9 @@ export function Chat({
           return {
             body: {
               id: chatId,
-              messages: [messages.at(-1)],
+              // A saved chat's history is on the server; a temporary chat's
+              // only exists here, so it is sent whole.
+              messages: body?.temporary ? messages : [messages.at(-1)],
               ...body,
             },
           };

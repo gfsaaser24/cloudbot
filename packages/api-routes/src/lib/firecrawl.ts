@@ -5,6 +5,9 @@
 // https://docs.firecrawl.dev/api-reference/v2-introduction
 
 const API_URL = "https://api.firecrawl.dev/v2";
+// A stalled call must not hold the chat turn open; callers that start long
+// work (parsing, running code in a browser) pass a longer limit.
+const DEFAULT_TIMEOUT_MS = 120_000;
 
 export interface ScrapedPage {
   url: string;
@@ -24,6 +27,7 @@ type RequestOptions = {
   body?: unknown;
   query?: Record<string, string | number | undefined>;
   form?: FormData;
+  timeoutMs?: number;
 };
 
 // What went wrong, in words the model can pass on to the user.
@@ -48,7 +52,7 @@ function errorMessage(status: number, body: string): string {
 export async function firecrawlRequest<T>(
   method: "GET" | "POST" | "PATCH" | "DELETE",
   path: string,
-  { body, query, form }: RequestOptions = {},
+  { body, query, form, timeoutMs = DEFAULT_TIMEOUT_MS }: RequestOptions = {},
 ): Promise<FirecrawlResponse<T>> {
   const url = new URL(`${API_URL}${path}`);
   for (const [key, value] of Object.entries(query ?? {})) {
@@ -56,6 +60,7 @@ export async function firecrawlRequest<T>(
   }
 
   let response: Response;
+  let text: string;
   try {
     response = await fetch(url, {
       method,
@@ -64,7 +69,9 @@ export async function firecrawlRequest<T>(
         ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
       },
       body: form ?? (body !== undefined ? JSON.stringify(body) : undefined),
+      signal: AbortSignal.timeout(timeoutMs),
     });
+    text = await response.text();
   } catch (error) {
     return {
       ok: false,
@@ -73,7 +80,6 @@ export async function firecrawlRequest<T>(
     };
   }
 
-  const text = await response.text();
   if (!response.ok) {
     return {
       ok: false,

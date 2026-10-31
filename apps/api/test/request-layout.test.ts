@@ -18,6 +18,8 @@ const calls = vi.hoisted(() => ({
   saved: [] as unknown[],
   // When set, the next model call asks for this tool instead of answering.
   nextToolCall: undefined as { toolName: string; input: unknown } | undefined,
+  // How often the selected folders were permission-checked.
+  folderChecks: 0,
 }));
 
 const { PROJECT_FOLDER, OTHER_FOLDER, PROMPT_ID } = vi.hoisted(() => ({
@@ -97,7 +99,7 @@ vi.mock("@workspace/api-routes/lib/queries/prompts.js", () => ({
 
 vi.mock("@workspace/api-routes/lib/chat/project-context.js", async (importActual) => ({
   ...(await importActual<typeof import("@workspace/api-routes/lib/chat/project-context.js")>()),
-  loadProject: async () => ({
+  loadProject: async (folderId: string | undefined) => folderId && ({
     folder: { id: PROJECT_FOLDER, name: "Season 3", description: null },
     fileNames: ["episode-1.md"],
     hasMoreFiles: false,
@@ -109,7 +111,10 @@ vi.mock("@workspace/server/drizzle/db.js", () => ({
   db: () => ({
     select: () => ({
       from: () => ({
-        where: async () => [{ id: OTHER_FOLDER, visibility: "private", folderId: OTHER_FOLDER, owner: "user-1" }],
+        where: async () => {
+          calls.folderChecks += 1;
+          return [{ id: OTHER_FOLDER, visibility: "private", folderId: OTHER_FOLDER, owner: "user-1" }];
+        },
       }),
     }),
   }),
@@ -138,7 +143,11 @@ function userTurn(id: string, text: string, selection: Selection = {}, extraPart
 }
 
 // Like ChatRequest.from: the stored chat plus the client's new message.
-async function runTurn(stored: CustomUIMessage[], incoming: CustomUIMessage, { webSearch = false } = {}) {
+async function runTurn(
+  stored: CustomUIMessage[],
+  incoming: CustomUIMessage,
+  { webSearch = false, inProject = true } = {},
+) {
   const messages = mergeIncomingMessages(stored, [incoming]);
   const request = {
     id: "chat-1",
@@ -146,7 +155,7 @@ async function runTurn(stored: CustomUIMessage[], incoming: CustomUIMessage, { w
     lastMessage: messages.at(-1),
     user: { id: "user-1" },
     model: "anthropic/claude-sonnet-5.5",
-    folderId: PROJECT_FOLDER,
+    folderId: inProject ? PROJECT_FOLDER : undefined,
     userLocation: { city: "Lisbon", region: "Lisbon", country: "PT", timezone: "Europe/Lisbon" },
     createNewChat: false,
     isTemporary: false,
@@ -324,6 +333,48 @@ describe("prompt caching settings", () => {
 });
 
 describe("tool approval", () => {
+  // Turn 1 of an approval: the model asks to crawl, and the reply waits.
+  async function askToCrawl(selection: Selection = {}, inProject = true) {
+    vi.stubEnv("FIRECRAWL_API_KEY", "fc-test");
+    const firecrawl: string[] = [];
+    vi.stubGlobal("fetch", async (url: URL | string) => {
+      firecrawl.push(new URL(String(url)).pathname);
+      return Response.json({ success: true, id: "crawl-1" });
+    });
+    calls.nextToolCall = { toolName: "firecrawlCrawl", input: { url: "https://a.com", limit: 10 } };
+    await runTurn([], userTurn("u1", "crawl a.com", selection), { webSearch: true, inProject });
+    const stored = [...(calls.saved as CustomUIMessage[])];
+    const reply = stored.find((m) => m.role === "assistant")!;
+    return { firecrawl, stored, reply };
+  }
+
+  // The client's copy of the reply with the user's answer.
+  const answered = (reply: CustomUIMessage, approved: boolean) =>
+    ({
+      ...reply,
+      parts: reply.parts.map((p) =>
+        p.type === "tool-firecrawlCrawl" && "approval" in p && p.approval
+          ? { ...p, state: "approval-responded", approval: { id: p.approval.id, approved } }
+          : p,
+      ),
+    }) as CustomUIMessage;
+
+  it("doesn't run a crawl the user declined", async () => {
+    const { firecrawl, stored, reply } = await askToCrawl();
+    await runTurn(stored, answered(reply, false), { webSearch: true });
+
+    expect(firecrawl).toEqual([]);
+  });
+
+  it("keeps the selected folders when the reply continues after approval", async () => {
+    // Outside a project, so only the message's own selection selects folders.
+    const { stored, reply } = await askToCrawl({ folders: [OTHER_FOLDER] }, false);
+    const checksBefore = calls.folderChecks;
+
+    await runTurn(stored, answered(reply, true), { webSearch: true, inProject: false });
+    expect(calls.folderChecks).toBeGreaterThan(checksBefore);
+  });
+
   it("pauses a crawl for the user's approval, then runs it and answers", async () => {
     vi.stubEnv("FIRECRAWL_API_KEY", "fc-test");
     const firecrawl: string[] = [];
