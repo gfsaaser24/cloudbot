@@ -86,10 +86,52 @@ describe("merging the incoming message into the stored chat", () => {
 
   it("replaces a stored message the client sends again instead of duplicating it", () => {
     const stored = [user("u1", "first"), readFile("a1", "x")];
-    const merged = mergeIncomingMessages(stored, [{ ...readFile("a1", "client copy") }]);
+    const merged = mergeIncomingMessages(stored, [readFile("a1", "client copy")]);
 
     expect(merged).toHaveLength(2);
     expect(JSON.stringify(merged)).not.toContain("client copy");
+  });
+});
+
+describe("tool approval continuations", () => {
+  it("keeps the stored message and takes only the client's approval answer", () => {
+    const awaiting = {
+      id: "a1",
+      role: "assistant",
+      parts: [
+        {
+          type: "tool-readFile",
+          toolCallId: "c1",
+          state: "approval-requested",
+          input: { filename: "big.md" },
+          approval: { id: "ap1" },
+        },
+      ],
+    } as CustomUIMessage;
+    const clientAnswer = {
+      id: "a1",
+      role: "assistant",
+      parts: [
+        {
+          type: "tool-readFile",
+          toolCallId: "c1",
+          state: "approval-responded",
+          input: { filename: "tampered.md" },
+          approval: { id: "ap1", approved: true },
+        },
+      ],
+    } as CustomUIMessage;
+
+    const [, merged] = mergeIncomingMessages([user("u1", "read big.md"), awaiting], [clientAnswer]);
+    expect(merged?.parts).toEqual([
+      {
+        type: "tool-readFile",
+        toolCallId: "c1",
+        state: "approval-responded",
+        input: { filename: "big.md" },
+        approval: { id: "ap1", approved: true },
+      },
+    ]);
   });
 });
 

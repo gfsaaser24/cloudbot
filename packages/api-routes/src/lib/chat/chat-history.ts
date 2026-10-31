@@ -1,4 +1,4 @@
-import { convertToModelMessages, type ModelMessage } from "ai";
+import { convertToModelMessages, isToolUIPart, type ModelMessage } from "ai";
 import { type CustomUIMessage } from "../../types/custom-ui-message.js";
 import { mockedTools } from "../tools/index.js";
 
@@ -8,6 +8,7 @@ import { mockedTools } from "../tools/index.js";
 
 // Parts only the server adds (attachments, document text). A client copy of a
 // message never supplies them; the server adds them again from the attachments.
+// Saved ones are the server's own and replay as sent.
 const SERVER_PART_TYPES = new Set(["file", "data-attachmentText"]);
 
 type Part = CustomUIMessage["parts"][number];
@@ -19,10 +20,6 @@ function withoutServerParts(message: CustomUIMessage): CustomUIMessage {
   };
 }
 
-function toolCallId(part: Part): string | undefined {
-  return "toolCallId" in part ? part.toolCallId : undefined;
-}
-
 // An assistant message the client sends back (to answer a tool approval) keeps
 // the stored parts and takes only the client's approval answers.
 function withApprovalAnswers(
@@ -31,15 +28,17 @@ function withApprovalAnswers(
 ): CustomUIMessage {
   const answers = new Map(
     client.parts
-      .filter((part) => part.type.startsWith("tool-") || part.type === "dynamic-tool")
-      .filter((part) => "state" in part && part.state === "approval-responded")
-      .map((part) => [toolCallId(part), part] as const),
+      .filter(isToolUIPart)
+      .filter((part) => part.state === "approval-responded")
+      .map((part) => [part.toolCallId, part] as const),
   );
 
   return {
     ...stored,
     parts: stored.parts.map((part) => {
-      const answer = answers.get(toolCallId(part));
+      const answer = isToolUIPart(part)
+        ? answers.get(part.toolCallId)
+        : undefined;
       return answer && "approval" in answer
         ? ({ ...part, state: answer.state, approval: answer.approval } as Part)
         : part;

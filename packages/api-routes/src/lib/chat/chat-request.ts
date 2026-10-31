@@ -146,7 +146,7 @@ export class ChatRequest {
         folderId = folder.id;
       }
 
-      // The whole conversation: every turn replays all of it.
+      // Load the full saved chat
       prevMessages = await getMessagesByChatId({
         bucket: c.env.CLOUDBOT_BUCKET,
         chatId: id,
@@ -175,9 +175,6 @@ export class ChatRequest {
       throw new HTTPException(400, { message: "BAD_REQUEST" });
     }
 
-    // File parts and attachment text come only from the server: mergeIncomingMessages
-    // strips them from client messages, and attachments are added again from the
-    // message's metadata. Saved ones are the server's own and replay as sent.
 
     return new ChatRequest(
       id,
