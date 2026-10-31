@@ -81,7 +81,7 @@ export async function getOpenRouterCatalog(): Promise<CatalogModel[]> {
         pdfs: true,
         reasoning: m.supportedParameters.includes("reasoning"),
         contextLength: m.contextLength ?? 0,
-        supportedParameters: m.supportedParameters.map(String),
+        supportedParameters: m.supportedParameters,
         maxCompletionTokens: m.topProvider.maxCompletionTokens ?? null,
       };
     })
