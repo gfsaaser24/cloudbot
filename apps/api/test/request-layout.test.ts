@@ -380,6 +380,15 @@ describe("tool approval", () => {
     expect(firecrawl).toEqual([]);
   });
 
+  it("counts what the reply used before and after the approval", async () => {
+    const { stored, reply } = await askToCrawl();
+    await runTurn(stored, answered(reply, true), { webSearch: true });
+
+    // Before: the step that asked to crawl ($0.01). After: the answer ($0.02).
+    const updated = (calls.saved as CustomUIMessage[]).findLast((m) => m.id === reply.id)!;
+    expect(updated.metadata?.usage?.costUsd).toBeCloseTo(0.03);
+  });
+
   it("keeps the selected folders when the reply continues after approval", async () => {
     // Outside a project, so only the message's own selection selects folders.
     const { stored, reply } = await askToCrawl({ folders: [OTHER_FOLDER] }, false);

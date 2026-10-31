@@ -30,6 +30,19 @@ export function replyUsage(
   };
 }
 
+// A reply that paused for a tool approval is finished by a second request;
+// its usage is both requests' together.
+export function addReplyUsage(a: ReplyUsage, b: ReplyUsage): ReplyUsage {
+  return {
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    cacheReadTokens: a.cacheReadTokens + b.cacheReadTokens,
+    cacheWriteTokens: a.cacheWriteTokens + b.cacheWriteTokens,
+    reasoningTokens: a.reasoningTokens + b.reasoningTokens,
+    costUsd: a.costUsd + b.costUsd,
+  };
+}
+
 const tokens = (count: number) => count.toLocaleString("en-US");
 
 function dollars(usd: number): string {

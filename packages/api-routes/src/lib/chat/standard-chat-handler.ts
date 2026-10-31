@@ -11,7 +11,7 @@ import { inArray } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import { standardSystemPrompt } from "../../providers/prompts.js";
 import { contextOverflowMessage } from "./chat-history.js";
-import { replyUsage } from "./reply-usage.js";
+import { addReplyUsage, replyUsage } from "./reply-usage.js";
 import { callCost, type TurnSpend, turnLimits } from "./stop-conditions.js";
 import { type Bindings } from "../../types/bindings.js";
 import { type TurnContextSection } from "../../schemas/data-schemas.js";
@@ -396,12 +396,17 @@ export class StandardChatHandler extends ChatHandler {
           }
           // Tokens and cost of the whole turn, including tools' model calls.
           if (part.type === "finish") {
-            return {
-              usage: replyUsage(
-                part.totalUsage,
-                finishedStepsCost + this.spend.tools,
-              ),
-            };
+            const usage = replyUsage(
+              part.totalUsage,
+              finishedStepsCost + this.spend.tools,
+            );
+            // A continuation adds to what the reply used before it paused
+            // (the stored copy, not the client's).
+            const before =
+              this.request.lastMessage.role === "assistant"
+                ? this.request.lastMessage.metadata?.usage
+                : undefined;
+            return { usage: before ? addReplyUsage(before, usage) : usage };
           }
         },
         sendReasoning: true,
