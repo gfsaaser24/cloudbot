@@ -42,6 +42,47 @@ type Props = {
   folderMetadata: FolderMetadata[];
 };
 
+// The named file, if it's in the selected files or folders. Selected files limit
+// the lookup to those files; otherwise any file in the selected folders.
+export async function findSelectedFile(
+  filename: string,
+  folderId: string | undefined,
+  {
+    fileMetadata,
+    folderMetadata,
+  }: { fileMetadata: FileMetadata[]; folderMetadata: FolderMetadata[] },
+) {
+  const scope = fileMetadata.length
+    ? fileMetadata.map((f) => f.folderId)
+    : folderMetadata.map((f) => f.id);
+  const folderIds = folderId
+    ? scope.filter((id) => id === folderId)
+    : [...new Set(scope)];
+
+  const candidates = folderIds.length
+    ? await db()
+        .select({
+          name: files.name,
+          visibility: files.visibility,
+          folderId: files.folderId,
+        })
+        .from(files)
+        .where(
+          and(
+            eq(files.name, filename),
+            eq(files.uploadConfirmed, true),
+            inArray(files.folderId, folderIds),
+          ),
+        )
+    : [];
+
+  return candidates.find(
+    (c) =>
+      !fileMetadata.length ||
+      fileMetadata.some((f) => f.name === c.name && f.folderId === c.folderId),
+  );
+}
+
 export const readFile = ({
   env,
   userId,
@@ -64,38 +105,10 @@ export const readFile = ({
         };
       }
 
-      // Selected files limit reading to those files; otherwise any file in the selected folders.
-      const scope = fileMetadata.length
-        ? fileMetadata.map((f) => f.folderId)
-        : folderMetadata.map((f) => f.id);
-      const folderIds = folderId
-        ? scope.filter((id) => id === folderId)
-        : [...new Set(scope)];
-
-      const candidates = folderIds.length
-        ? await db()
-            .select({
-              name: files.name,
-              visibility: files.visibility,
-              folderId: files.folderId,
-            })
-            .from(files)
-            .where(
-              and(
-                eq(files.name, filename),
-                eq(files.uploadConfirmed, true),
-                inArray(files.folderId, folderIds),
-              ),
-            )
-        : [];
-
-      const file = candidates.find(
-        (c) =>
-          !fileMetadata.length ||
-          fileMetadata.some(
-            (f) => f.name === c.name && f.folderId === c.folderId,
-          ),
-      );
+      const file = await findSelectedFile(filename, folderId, {
+        fileMetadata,
+        folderMetadata,
+      });
 
       if (!file) {
         return {

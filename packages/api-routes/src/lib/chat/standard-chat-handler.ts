@@ -27,8 +27,8 @@ import { generateUUID } from "../../utils/generate-uuid.js";
 import { getPromptsByIds } from "../queries/prompts.js";
 import { createDocument } from "../tools/create-document.js";
 import { extractFromDocuments } from "../tools/extract-from-documents.js";
-import { extractFromWeb } from "../tools/extract-from-web.js";
 import { fetchWebContent } from "../tools/fetch-web-content.js";
+import { firecrawlTools } from "../tools/firecrawl-tools.js";
 import { readFile } from "../tools/read-file.js";
 import {
   getImportStatus,
@@ -308,12 +308,19 @@ export class StandardChatHandler extends ChatHandler {
       fileMetadata: authorizedFileMetadata,
       folderMetadata: authorizedFolderMetadata,
     });
-    tools.extractFromWeb = extractFromWeb({
-      env: this.env,
-      userLocation: this.request.userLocation,
-      dataStream: writer,
-      enabled: Boolean(this.request.webSearchEnabled),
-    });
+    // Firecrawl is the web layer; the web search toggle enables it.
+    if (isFirecrawlConfigured()) {
+      Object.assign(
+        tools,
+        firecrawlTools({
+          env: this.env,
+          userId: this.request.user.id,
+          enabled: Boolean(this.request.webSearchEnabled),
+          fileMetadata: authorizedFileMetadata,
+          folderMetadata: authorizedFolderMetadata,
+        }),
+      );
+    }
 
     // A fixed order, so the same tools always produce the same request. A plain
     // comparison, since locale-aware ordering can vary between runtimes.

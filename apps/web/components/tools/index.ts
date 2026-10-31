@@ -3,6 +3,7 @@ export { ToolDynamic } from "./dynamic-tool";
 export { ToolExtractFromDocuments } from "./extract-from-documents";
 export { ToolExtractFromWeb } from "./extract-from-web";
 export { ToolFetchWebContent } from "./fetch-web-content";
+export { type FirecrawlToolPart, ToolFirecrawl } from "./firecrawl";
 export { ToolGenerateFile } from "./generate-file";
 export { ToolGetImportStatus } from "./get-import-status";
 export { ToolImportYouTubeTranscripts } from "./import-youtube-transcripts";

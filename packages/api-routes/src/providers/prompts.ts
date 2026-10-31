@@ -19,9 +19,6 @@ export const wordCompletionCheckPrompt: string =
 export const documentSearchPrompt: string =
   "Answer the query using only the provided sources. Cite each used source inline as [[doc:folderId/filename]] immediately after the claim it supports. Separate multiple citations with a space. Be concise.";
 
-export const webSearchPrompt: string =
-  "Your purpose is to extract relevant information from the web. Cite each source by referencing its URL using the format [[web:{url}]]. When citing multiple sources, separate each citation with a space (e.g., [[web:https://example.com]] [[web:https://other.com]]).";
-
 export function createDocumentPrompt(kind: "text" | "code" | "sheet"): string {
   const prompts = {
     text: "Write a document based on the provided title and description. The title is the topic and the description contains additional instructions or context. Markdown is supported. Use headings wherever appropriate.",
