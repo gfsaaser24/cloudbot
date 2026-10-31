@@ -41,6 +41,7 @@ const chatModel = new MockLanguageModelV4({
             {
               type: "finish",
               finishReason: { unified: "tool-calls", raw: "tool_calls" },
+              providerMetadata: { openrouter: { usage: { cost: 0.01 } } },
               usage: {
                 inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
                 outputTokens: { total: 1, text: 1, reasoning: 0 },
@@ -59,6 +60,7 @@ const chatModel = new MockLanguageModelV4({
           {
             type: "finish",
             finishReason: { unified: "stop", raw: "stop" },
+            providerMetadata: { openrouter: { usage: { cost: 0.02 } } },
             usage: {
               inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
               outputTokens: { total: 1, text: 1, reasoning: 0 },
@@ -332,6 +334,18 @@ describe("prompt caching settings", () => {
   });
 });
 
+describe("reply usage", () => {
+  it("saves the whole turn's cost, summed over its steps", async () => {
+    // Step 1 asks for a tool ($0.01), step 2 answers ($0.02).
+    calls.nextToolCall = { toolName: "readFile", input: { filename: "episode-1.md" } };
+    await runTurn([], userTurn("u1", "read episode 1"));
+
+    const reply = (calls.saved as CustomUIMessage[]).find((m) => m.role === "assistant")!;
+    expect(reply.metadata?.usage?.costUsd).toBeCloseTo(0.03);
+    expect(reply.metadata?.usage?.inputTokens).toBe(2);
+  });
+});
+
 describe("tool approval", () => {
   // Turn 1 of an approval: the model asks to crawl, and the reply waits.
   async function askToCrawl(selection: Selection = {}, inProject = true) {
@@ -364,6 +378,15 @@ describe("tool approval", () => {
     await runTurn(stored, answered(reply, false), { webSearch: true });
 
     expect(firecrawl).toEqual([]);
+  });
+
+  it("counts what the reply used before and after the approval", async () => {
+    const { stored, reply } = await askToCrawl();
+    await runTurn(stored, answered(reply, true), { webSearch: true });
+
+    // Before: the step that asked to crawl ($0.01). After: the answer ($0.02).
+    const updated = (calls.saved as CustomUIMessage[]).findLast((m) => m.id === reply.id)!;
+    expect(updated.metadata?.usage?.costUsd).toBeCloseTo(0.03);
   });
 
   it("keeps the selected folders when the reply continues after approval", async () => {

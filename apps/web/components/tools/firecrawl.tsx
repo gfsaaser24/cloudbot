@@ -106,6 +106,11 @@ export function ToolFirecrawl({ part }: { part: FirecrawlToolPart }) {
         </div>
       )}
 
+      {output?.status && name === "firecrawlJobStatus" && (
+        <div className="text-muted-foreground mt-1 text-xs uppercase">
+          {output.status}
+        </div>
+      )}
       {output && <div className="mt-1 text-sm">{output.summary}</div>}
       {output?.liveViewUrl && (
         <a

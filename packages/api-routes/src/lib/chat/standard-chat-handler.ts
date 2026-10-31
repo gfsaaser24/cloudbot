@@ -11,7 +11,8 @@ import { inArray } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import { standardSystemPrompt } from "../../providers/prompts.js";
 import { contextOverflowMessage } from "./chat-history.js";
-import { type TurnSpend, turnLimits } from "./stop-conditions.js";
+import { addReplyUsage, replyUsage } from "./reply-usage.js";
+import { callCost, type TurnSpend, turnLimits } from "./stop-conditions.js";
 import { type Bindings } from "../../types/bindings.js";
 import { type TurnContextSection } from "../../schemas/data-schemas.js";
 import { type CustomUIMessage } from "../../types/custom-ui-message.js";
@@ -377,6 +378,9 @@ export class StandardChatHandler extends ChatHandler {
     // Finish generating even if the client disconnects, so the reply isn't lost.
     this.waitUntil?.(result.consumeStream());
 
+    // Summed here as steps finish: the turn limits' spend.steps is refreshed
+    // before each step, so it never includes the last one.
+    let finishedStepsCost = 0;
     writer.merge(
       toUIMessageStream<typeof tools, CustomUIMessage>({
         stream: result.stream,
@@ -387,9 +391,22 @@ export class StandardChatHandler extends ChatHandler {
           await this.saveResponseMessages([responseMessage]);
         },
         messageMetadata: ({ part }) => {
-          // Send total usage when generation is finished
+          if (part.type === "finish-step") {
+            finishedStepsCost += callCost(part.providerMetadata);
+          }
+          // Tokens and cost of the whole turn, including tools' model calls.
           if (part.type === "finish") {
-            return { totalUsage: part.totalUsage };
+            const usage = replyUsage(
+              part.totalUsage,
+              finishedStepsCost + this.spend.tools,
+            );
+            // A continuation adds to what the reply used before it paused
+            // (the stored copy, not the client's).
+            const before =
+              this.request.lastMessage.role === "assistant"
+                ? this.request.lastMessage.metadata?.usage
+                : undefined;
+            return { usage: before ? addReplyUsage(before, usage) : usage };
           }
         },
         sendReasoning: true,
