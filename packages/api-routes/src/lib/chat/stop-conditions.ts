@@ -39,9 +39,13 @@ export function callCost(
 const stepCost = (step: StepResult<ToolSet>) =>
   callCost(step.providerMetadata);
 
-// Model calls that tools make during a turn, such as analyzeFolder reading
-// each file. They count toward the cost ceiling like the turn's own steps.
-export type ToolSpend = { usd: number };
+// What a turn has spent so far: its own model steps, and model calls tools make
+// (analyzeFolder reading each file). Both count toward the cost ceiling, and a
+// long-running tool checks it before each call.
+export type TurnSpend = { steps: number; tools: number };
+
+export const isOverBudget = (spend: TurnSpend) =>
+  spend.steps + spend.tools >= TURN_COST_CEILING_USD;
 
 const FINAL_ANSWER_INSTRUCTION =
   "This turn has reached its research limit. Answer now with what you have gathered, without calling more tools, and say what you didn't cover.";
@@ -51,9 +55,11 @@ function modelId(model: LanguageModel): string {
 }
 
 // The tool loop's limits for one turn.
-export function turnLimits(toolSpend: ToolSpend) {
+export function turnLimits(spend: TurnSpend) {
+  const stepsCost = (steps: StepResult<ToolSet>[]) =>
+    steps.reduce((sum, step) => sum + stepCost(step), 0);
   const turnCost = (steps: StepResult<ToolSet>[]) =>
-    steps.reduce((sum, step) => sum + stepCost(step), 0) + toolSpend.usd;
+    stepsCost(steps) + spend.tools;
 
   const stopWhen: StopCondition<ToolSet>[] = [
     isStepCount(MAX_STEPS),
@@ -87,6 +93,8 @@ export function turnLimits(toolSpend: ToolSpend) {
     messages,
     model,
   }) => {
+    // Kept current for tools that run during this step.
+    spend.steps = stepsCost(steps);
     if (!mustAnswer(stepNumber, steps)) return undefined;
 
     return {

@@ -11,7 +11,7 @@ import { inArray } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import { standardSystemPrompt } from "../../providers/prompts.js";
 import { contextOverflowMessage } from "./chat-history.js";
-import { type ToolSpend, turnLimits } from "./stop-conditions.js";
+import { type TurnSpend, turnLimits } from "./stop-conditions.js";
 import { type Bindings } from "../../types/bindings.js";
 import { type TurnContextSection } from "../../schemas/data-schemas.js";
 import { type CustomUIMessage } from "../../types/custom-ui-message.js";
@@ -58,8 +58,8 @@ const logger = createLogger("standard-chat-handler");
 export class StandardChatHandler extends ChatHandler {
   private systemPrompt = standardSystemPrompt;
   private project?: Project; // Loaded at the start of executeChat
-  // What tools spend on model calls this turn, toward the cost ceiling.
-  private toolSpend: ToolSpend = { usd: 0 };
+  // What this turn has spent, toward its cost ceiling.
+  private spend: TurnSpend = { steps: 0, tools: 0 };
 
   constructor(
     env: Bindings,
@@ -316,7 +316,7 @@ export class StandardChatHandler extends ChatHandler {
       userId: this.request.user.id,
       fileMetadata: authorizedFileMetadata,
       folderMetadata: authorizedFolderMetadata,
-      toolSpend: this.toolSpend,
+      spend: this.spend,
     });
     // Firecrawl is the web layer; the web search toggle enables it.
     if (isFirecrawlConfigured()) {
@@ -368,7 +368,7 @@ export class StandardChatHandler extends ChatHandler {
     const result = streamText({
       ...streamConfig,
       tools,
-      ...turnLimits(this.toolSpend),
+      ...turnLimits(this.spend),
       onError: ({ error }) => {
         logger.error("Model stream error", error);
       },

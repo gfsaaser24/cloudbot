@@ -1,6 +1,8 @@
 import { analyzeFolder } from "@workspace/api-routes/lib/tools/analyze-folder.js";
 import { type Bindings } from "@workspace/api-routes/types/bindings.js";
 import { MockLanguageModelV4 } from "ai/test";
+import { type SQL } from "drizzle-orm";
+import { SQLiteSyncDialect } from "drizzle-orm/sqlite-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // analyzeFolder answers questions across many files by extracting the same
@@ -16,14 +18,17 @@ const state = vi.hoisted(() => ({
   failing: new Set<string>(),
   // How long each extracted value is.
   valueLength: 0,
+  // The folder query's where clause, and how many extraction calls ran.
+  where: undefined as unknown,
+  modelCalls: 0,
 }));
 
 vi.mock("@workspace/server/drizzle/db.js", () => ({
   db: () => ({
     select: (columns: Record<string, unknown>) => ({
       from: () => ({
-        where: (_where: unknown) =>
-          "total" in columns
+        where: (where: unknown) =>
+          ((state.where = where), "total" in columns)
             ? Promise.resolve([{ total: state.total }])
             : { orderBy: () => ({ limit: async (n: number) => state.rows.slice(0, n) }) },
       }),
@@ -38,6 +43,7 @@ vi.mock("@workspace/api-routes/providers/providers.js", async (importActual) => 
   getExtractionModel: async () =>
     new MockLanguageModelV4({
       doGenerate: async ({ prompt }) => {
+        state.modelCalls += 1;
         const text = JSON.stringify(prompt);
         const filename = /Document \\"([^"\\]+)\\"/.exec(text)?.[1] ?? "?";
         if (state.failing.has(filename)) throw new Error("model error");
@@ -71,23 +77,29 @@ type Run = { status: string; completed: number; total: number; rows: { filename:
 async function run({
   selectedFiles,
   filenames,
-}: { selectedFiles?: { id: string; name: string; visibility: string; folderId: string; owner: string }[]; filenames?: string[] } = {}) {
-  const toolSpend = { usd: 0 };
+  startAfter,
+  spend = { steps: 0, tools: 0 },
+}: {
+  selectedFiles?: { id: string; name: string; visibility: string; folderId: string; owner: string }[];
+  filenames?: string[];
+  startAfter?: string;
+  spend?: { steps: number; tools: number };
+} = {}) {
   const tool = analyzeFolder({
     env: { CLOUDBOT_BUCKET: bucket } as unknown as Bindings,
     userId: "user-1",
     fileMetadata: selectedFiles ?? [],
     folderMetadata: selectedFiles ? [] : [{ id: FOLDER, visibility: "private", folderId: FOLDER, owner: "user-1" }],
-    toolSpend,
+    spend,
   });
 
   const outputs: Run[] = [];
   const stream = tool.execute!(
-    { fields: [{ name: "pricing", description: "How the guest priced their first offer" }], filenames },
+    { fields: [{ name: "pricing", description: "How the guest priced their first offer" }], filenames, startAfter },
     { toolCallId: "c1", messages: [] },
   ) as AsyncIterable<Run>;
   for await (const output of stream) outputs.push(output);
-  return { outputs, final: outputs.at(-1)!, toolSpend };
+  return { outputs, final: outputs.at(-1)!, spend };
 }
 
 beforeEach(() => {
@@ -95,6 +107,8 @@ beforeEach(() => {
   state.total = 0;
   state.failing = new Set();
   state.valueLength = 0;
+  state.where = undefined;
+  state.modelCalls = 0;
 });
 
 describe("analyzeFolder", () => {
@@ -128,7 +142,8 @@ describe("analyzeFolder", () => {
     const { final } = await run();
     expect(final.rows).toHaveLength(100);
     expect(final.skipped).toBe(30);
-    expect(final.message).toContain("30 more files were not analyzed");
+    expect(final.nextStartAfter).toBe("episode-100.md");
+    expect(final.message).toContain('startAfter "episode-100.md"');
   });
 
   it("reports progress once per finished file", async () => {
@@ -151,8 +166,8 @@ describe("analyzeFolder", () => {
     state.rows = [1, 2, 3].map(transcript);
     state.total = 3;
 
-    const { toolSpend } = await run();
-    expect(toolSpend.usd).toBeCloseTo(3 * COST_PER_FILE);
+    const { spend } = await run();
+    expect(spend.tools).toBeCloseTo(3 * COST_PER_FILE);
   });
 
   it("keeps a large table within about 100,000 characters", async () => {
@@ -163,5 +178,23 @@ describe("analyzeFolder", () => {
     const { final } = await run();
     expect(final.rows).toHaveLength(100);
     expect(JSON.stringify(final.rows).length).toBeLessThan(110_000);
+  });
+
+  it("starts no more files once the turn reaches its cost limit", async () => {
+    state.rows = [1, 2, 3].map(transcript);
+    state.total = 3;
+
+    const { final } = await run({ spend: { steps: 1.99, tools: 0.01 } });
+    expect(state.modelCalls).toBe(0);
+    expect(final.rows.every((r) => r.error?.includes("cost limit"))).toBe(true);
+    expect(final.message).toContain("3 were not analyzed because this turn reached its cost limit");
+  });
+
+  it("queries only the selected folders' confirmed files, after the cursor", async () => {
+    await run({ filenames: ["episode-007.md"], startAfter: "episode-005.md" });
+
+    const { sql, params } = new SQLiteSyncDialect().sqlToQuery(state.where as SQL);
+    expect(sql).toMatch(/folder_id.*in.*upload_confirmed.*name.*in.*name.*>/is);
+    expect(params).toEqual(expect.arrayContaining([FOLDER, "episode-007.md", "episode-005.md"]));
   });
 });

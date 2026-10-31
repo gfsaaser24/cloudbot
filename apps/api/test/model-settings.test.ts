@@ -193,8 +193,8 @@ describe("the tool loop", () => {
 
   const tools = { search: tool({ inputSchema: jsonSchema({ type: "object", properties: {} }), execute: async () => "more results" }) };
 
-  const run = (model: MockLanguageModelV4, toolSpend = { usd: 0 }) =>
-    generateText({ model, tools, prompt: "research this", ...turnLimits(toolSpend) });
+  const run = (model: MockLanguageModelV4, spend = { steps: 0, tools: 0 }) =>
+    generateText({ model, tools, prompt: "research this", ...turnLimits(spend) });
 
   it("keeps going while the cost is under $2 and steps are under 30, then ends with an answer", async () => {
     const result = await run(loopingModel(0.01).model);
@@ -225,7 +225,7 @@ describe("the tool loop", () => {
 
   it("counts what tools spent toward the ceiling", async () => {
     // $1.50 already spent by tools: 1.5 + 0.1 + 0.1 = 1.7 (85%) -> answer.
-    const result = await run(loopingModel(0.1).model, { usd: 1.5 });
+    const result = await run(loopingModel(0.1).model, { steps: 0, tools: 1.5 });
     expect(result.steps).toHaveLength(3);
     expect(result.text).toBe("Here is what I found.");
   });
