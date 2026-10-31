@@ -27,5 +27,14 @@ export const dataSchemas = {
   attachmentText: z.object({ text: z.string() }).strict(),
   // The per-turn context (date, location, project, selected instructions), kept
   // out of the instructions so they stay identical and cacheable across turns.
-  turnContext: z.object({ text: z.string() }).strict(),
+  turnContext: z
+    .object({
+      section: z.enum(["now", "project", "instructions"]),
+      text: z.string(),
+    })
+    .strict(),
 };
+
+export type TurnContextSection = z.infer<
+  typeof dataSchemas.turnContext
+>["section"];

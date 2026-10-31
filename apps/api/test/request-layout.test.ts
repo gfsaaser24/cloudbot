@@ -4,6 +4,7 @@ import { type ChatRequest } from "@workspace/api-routes/lib/chat/chat-request.js
 import { StandardChatHandler } from "@workspace/api-routes/lib/chat/standard-chat-handler.js";
 import { extractFromDocuments } from "@workspace/api-routes/lib/tools/extract-from-documents.js";
 import { extractFromWeb } from "@workspace/api-routes/lib/tools/extract-from-web.js";
+import { readFile } from "@workspace/api-routes/lib/tools/read-file.js";
 import { type Bindings } from "@workspace/api-routes/types/bindings.js";
 import { type CustomUIMessage } from "@workspace/api-routes/types/custom-ui-message.js";
 import { generateText, type UIMessageStreamWriter } from "ai";
@@ -139,6 +140,16 @@ const toolNames = (call: LanguageModelV4CallOptions) => (call.tools ?? []).map((
 const turnContextParts = (message: unknown) =>
   (message as CustomUIMessage).parts.filter((p) => p.type === "data-turnContext");
 
+const sections = (message: unknown) =>
+  turnContextParts(message).map((p) => (p.type === "data-turnContext" ? p.data.section : undefined));
+
+const savedUser = (id: string) =>
+  (calls.saved as CustomUIMessage[]).findLast((m) => m.role === "user" && m.id === id);
+
+// Everything the model is sent, as text, to count what reaches it.
+const promptText = (call: LanguageModelV4CallOptions) => JSON.stringify(call.prompt);
+const count = (text: string, needle: string) => text.split(needle).length - 1;
+
 beforeEach(() => {
   calls.model.length = 0;
   calls.saved.length = 0;
@@ -168,6 +179,8 @@ describe("request layout across turns", () => {
     const firstUser = (call: LanguageModelV4CallOptions) => call.prompt.find((m) => m.role === "user");
     expect(JSON.stringify(firstUser(second))).toBe(JSON.stringify(firstUser(first)));
     expect(systemText(first)).not.toMatch(/2026|Lisbon|Season 3/);
+    // The context reaches the model with the user's message instead.
+    expect(JSON.stringify(firstUser(first))).toMatch(/October 30, 2026[\s\S]*Lisbon[\s\S]*Season 3/);
     expect(toolNames(second)).toEqual(toolNames(first));
     expect(toolNames(first)).toEqual([...toolNames(first)].sort());
     expect(toolNames(first)).toEqual(expect.arrayContaining(["extractFromDocuments", "readFile", "extractFromWeb"]));
@@ -178,22 +191,42 @@ describe("request layout across turns", () => {
     vi.setSystemTime(new Date("2026-10-30T09:00:00Z"));
     await runTurn([], userTurn("u1", "hi", { prompts: [PROMPT_ID] }));
 
-    const savedUser = calls.saved.find((m) => (m as CustomUIMessage).role === "user");
-    const [context] = turnContextParts(savedUser);
-    expect(turnContextParts(savedUser)).toHaveLength(1);
-    expect(JSON.stringify(context)).toContain("October 30, 2026");
-    expect(JSON.stringify(context)).toContain("Lisbon");
-    expect(JSON.stringify(context)).toContain("Season 3");
-    expect(JSON.stringify(context)).toContain("Write like a podcast host.");
+    const context = JSON.stringify(turnContextParts(savedUser("u1")));
+    expect(sections(savedUser("u1"))).toEqual(["now", "project", "instructions"]);
+    expect(context).toContain("October 30, 2026");
+    expect(context).toContain("Lisbon");
+    expect(context).toContain("Season 3");
+    expect(context).toContain("Write like a podcast host.");
   });
 
-  it("gives a retried message exactly one context part", async () => {
-    const stale = { type: "data-turnContext", data: { text: "## Current Context\n\nan old one" } };
+  it("adds unchanged instructions and project once, and says when instructions are removed", async () => {
+    await runTurn([], userTurn("u1", "hi", { prompts: [PROMPT_ID] }));
+    const second = await runTurn([...(calls.saved as CustomUIMessage[])], userTurn("u2", "more", { prompts: [PROMPT_ID] }));
+
+    expect(sections(savedUser("u2"))).toEqual(["now"]);
+    expect(count(promptText(second), "Write like a podcast host.")).toBe(1);
+    expect(count(promptText(second), "## Project")).toBe(1);
+
+    const third = await runTurn([...(calls.saved as CustomUIMessage[])], userTurn("u3", "plain now"));
+    expect(sections(savedUser("u3"))).toEqual(["now", "instructions"]);
+    expect(promptText(third)).toMatch(/removed the custom instructions selected earlier/);
+  });
+
+  it("gives a retried message one fresh context and drops the client's copy", async () => {
+    const stale = { type: "data-turnContext", data: { section: "now", text: "## Current Context\n\nan old one" } };
     await runTurn([], userTurn("u1", "again", {}, [stale]));
 
-    const savedUser = calls.saved.find((m) => (m as CustomUIMessage).role === "user");
-    expect(turnContextParts(savedUser)).toHaveLength(1);
-    expect(JSON.stringify(savedUser)).not.toContain("an old one");
+    expect(sections(savedUser("u1"))).toEqual(["now", "project"]);
+    expect(JSON.stringify(savedUser("u1"))).not.toContain("an old one");
+  });
+
+  it("adds no context when continuing an assistant message", async () => {
+    await runTurn([], userTurn("u1", "hi"));
+    const stored = [...(calls.saved as CustomUIMessage[])];
+    const reply = stored.find((m) => m.role === "assistant")!;
+
+    const continued = await runTurn(stored, reply);
+    expect(count(promptText(continued), "## Current Context")).toBe(1);
   });
 
   it("sends the chat id as session_id on every turn", async () => {
@@ -214,6 +247,16 @@ describe("tools whose precondition is off", () => {
     const output = await tool.execute?.({ query: "pricing", max_num_results: 10 }, toolCall);
     expect(JSON.stringify(output)).toMatch(/no folder or file is selected/i);
     expect(search).not.toHaveBeenCalled();
+  });
+
+  it("readFile explains that nothing is selected instead of reading", async () => {
+    const get = vi.fn();
+    const env = { CLOUDBOT_BUCKET: { get } } as unknown as Bindings;
+    const tool = readFile({ env, userId: "user-1", fileMetadata: [], folderMetadata: [] });
+
+    const output = await tool.execute?.({ filename: "episode-1.md" }, toolCall);
+    expect(output).toMatchObject({ found: false, message: expect.stringMatching(/no folder or file is selected/i) });
+    expect(get).not.toHaveBeenCalled();
   });
 
   it("extractFromWeb explains that web search is off", async () => {

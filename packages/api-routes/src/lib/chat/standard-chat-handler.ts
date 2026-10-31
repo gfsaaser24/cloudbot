@@ -13,6 +13,7 @@ import { HTTPException } from "hono/http-exception";
 import { standardSystemPrompt } from "../../providers/prompts.js";
 import { contextOverflowMessage } from "./chat-history.js";
 import { type Bindings } from "../../types/bindings.js";
+import { type TurnContextSection } from "../../schemas/data-schemas.js";
 import { type CustomUIMessage } from "../../types/custom-ui-message.js";
 import {
   type FileMetadata,
@@ -72,46 +73,76 @@ export class StandardChatHandler extends ChatHandler {
       : this.systemPrompt;
   }
 
-  // What changes from turn to turn (date, location, project, selected
-  // instructions) goes on the new user message and is saved with it, so it
-  // replays unchanged on later turns.
+  // What changes from turn to turn goes on the new user message and is saved
+  // with it, so earlier turns replay unchanged. The date and location are added
+  // every turn; the project and the selected instructions only when they differ
+  // from the latest ones already in the conversation, since the selection stays
+  // on across turns and the whole conversation is replayed.
   private async addTurnContext(): Promise<void> {
     const lastMessage = this.request.lastMessage;
     if (lastMessage.role !== "user") return;
 
-    let context = this.buildCurrentContext();
-
-    if (this.project) {
-      const effectiveFilter = this.getEffectiveContextFilter();
-      const searchesProject =
-        !effectiveFilter?.files.length &&
-        !!effectiveFilter?.folders.some(
-          (f) => f.id === this.project?.folder.id,
-        );
-      context += buildProjectPrompt(this.project, searchesProject);
-    }
-
-    const contextFilter = this.getContextFilter();
-    if (contextFilter && contextFilter.prompts.length > 0) {
-      const promptIds = contextFilter.prompts.map((p) => p.id);
-      const userPrompts = await getPromptsByIds({
-        ids: promptIds,
-        userId: this.request.user.id,
-      });
-
-      if (userPrompts.length > 0) {
-        context += `\n\n## User-Selected Instructions\n\n`;
-        context += `The user has selected the following custom instructions. Follow them carefully:\n\n`;
-        for (const prompt of userPrompts) {
-          context += `### ${prompt.name}\n\n${prompt.content}\n\n`;
+    const latest = new Map<TurnContextSection, string>();
+    for (const message of this.request.messages) {
+      for (const part of message.parts) {
+        if (part.type === "data-turnContext") {
+          latest.set(part.data.section, part.data.text);
         }
       }
     }
 
-    lastMessage.parts.push({
-      type: "data-turnContext",
-      data: { text: `\n\n${context}` },
-    });
+    const sections: [TurnContextSection, string | undefined][] = [
+      ["now", `\n\n${this.buildCurrentContext()}`],
+      ["project", this.buildProjectSection()],
+      ["instructions", await this.buildInstructionsSection(latest)],
+    ];
+
+    for (const [section, text] of sections) {
+      if (text === undefined) continue;
+      if (section !== "now" && latest.get(section) === text) continue;
+      lastMessage.parts.push({
+        type: "data-turnContext",
+        data: { section, text },
+      });
+    }
+  }
+
+  private buildProjectSection(): string | undefined {
+    if (!this.project) return undefined;
+
+    const effectiveFilter = this.getEffectiveContextFilter();
+    const searchesProject =
+      !effectiveFilter?.files.length &&
+      !!effectiveFilter?.folders.some((f) => f.id === this.project?.folder.id);
+    return buildProjectPrompt(this.project, searchesProject);
+  }
+
+  // Selected instructions apply from the message they were selected on until a
+  // later message changes or removes them.
+  private async buildInstructionsSection(
+    latest: Map<TurnContextSection, string>,
+  ): Promise<string | undefined> {
+    const contextFilter = this.getContextFilter();
+    const userPrompts = contextFilter?.prompts.length
+      ? await getPromptsByIds({
+          ids: contextFilter.prompts.map((p) => p.id),
+          userId: this.request.user.id,
+        })
+      : [];
+
+    if (userPrompts.length === 0) {
+      // Earlier messages still carry the old instructions, so say they ended.
+      return latest.has("instructions")
+        ? `\n\n## User-Selected Instructions\n\nThe user removed the custom instructions selected earlier. Don't follow them any more.\n`
+        : undefined;
+    }
+
+    let section = `\n\n## User-Selected Instructions\n\n`;
+    section += `The user selected the following custom instructions. Follow them carefully from this message on; they replace any selected earlier:\n\n`;
+    for (const prompt of userPrompts) {
+      section += `### ${prompt.name}\n\n${prompt.content}\n\n`;
+    }
+    return section;
   }
 
   // The message's context filter, falling back to the chat's project folder
