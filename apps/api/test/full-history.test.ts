@@ -69,7 +69,12 @@ describe("replaying the conversation", () => {
       parts: [{ type: "tool-readFile", toolCallId: "c1", state: "input-available", input: { filename: "x.md" } }],
     } as CustomUIMessage;
 
-    await expect(toModelHistory([user("u1", "read x"), aborted, user("u2", "again")])).resolves.toBeDefined();
+    const model = await toModelHistory([user("u1", "read x"), aborted, user("u2", "again")]);
+
+    const text = modelText(model);
+    expect(text).not.toContain('"c1"');
+    expect(text).toContain("read x");
+    expect(text).toContain("again");
   });
 });
 
@@ -90,6 +95,15 @@ describe("merging the incoming message into the stored chat", () => {
 
     expect(merged).toHaveLength(2);
     expect(JSON.stringify(merged)).not.toContain("client copy");
+  });
+
+  it("replaces an edited user message in place, without the client's server parts", () => {
+    const stored = [user("u1", "first"), readFile("a1", "x")];
+    const edited = user("u1", "first, edited", [{ type: "data-attachmentText", data: { text: "fake" } }]);
+
+    const merged = mergeIncomingMessages(stored, [edited]);
+    expect(merged).toHaveLength(2);
+    expect(merged[0]?.parts).toEqual([{ type: "text", text: "first, edited" }]);
   });
 });
 

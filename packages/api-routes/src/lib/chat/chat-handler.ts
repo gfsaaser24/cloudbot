@@ -250,13 +250,22 @@ export abstract class ChatHandler {
         userId: this.request.user.id,
       });
 
+      // The filter stays selected across turns. A document already in the
+      // conversation unchanged is not added again: the full history replays it.
+      const textsInHistory = new Set(
+        this.request.messages.flatMap((message) =>
+          message.parts.flatMap((part) =>
+            part.type === "data-attachmentText" ? [part.data.text] : [],
+          ),
+        ),
+      );
+
       for (const doc of docs) {
-        if (doc.content) {
+        const text = `\n\n[Referenced Document: "${doc.title}"]\n\n${doc.content}`;
+        if (doc.content && !textsInHistory.has(text)) {
           lastMessage.parts.push({
             type: "data-attachmentText",
-            data: {
-              text: `\n\n[Referenced Document: "${doc.title}"]\n\n${doc.content}`,
-            },
+            data: { text },
           });
 
           logger.debug("Attached document to message", {
