@@ -54,9 +54,7 @@ export const updateDocument = ({
         const document = await getDocumentById({ id });
 
         if (!document) {
-          return {
-            error: "Document not found",
-          };
+          throw new Error("Document not found");
         }
 
         dataStream.write({

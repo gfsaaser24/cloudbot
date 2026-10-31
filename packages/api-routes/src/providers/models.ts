@@ -1,4 +1,4 @@
-export type Provider = "vercel-ai-gateway" | "workers-ai" | "openrouter";
+export type Provider = "vercel-ai-gateway" | "openrouter";
 
 export interface ChatModel {
   id: number;

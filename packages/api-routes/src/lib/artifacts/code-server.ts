@@ -29,14 +29,14 @@ export const codeDocumentHandler = createDocumentHandler<"code">({
 
     const config = await getModel(env, artifactModelIdx);
 
-    const { fullStream } = streamText({
+    const { stream } = streamText({
       model: config.model,
-      system: createDocumentPrompt("code"),
+      instructions: createDocumentPrompt("code"),
       prompt: description ? `${title}\n\n${description}` : title,
       experimental_transform: smoothStream({ chunking: "line" }),
     });
 
-    for await (const delta of fullStream) {
+    for await (const delta of stream) {
       const { type } = delta;
 
       if (type === "text-delta") {
@@ -62,14 +62,14 @@ export const codeDocumentHandler = createDocumentHandler<"code">({
 
     const config = await getModel(env, artifactModelIdx);
 
-    const { fullStream } = streamText({
+    const { stream } = streamText({
       model: config.model,
-      system: updateDocumentPrompt(document.content, "code"),
+      instructions: updateDocumentPrompt(document.content, "code"),
       prompt: description,
       experimental_transform: smoothStream({ chunking: "line" }),
     });
 
-    for await (const delta of fullStream) {
+    for await (const delta of stream) {
       const { type } = delta;
 
       if (type === "text-delta") {

@@ -24,7 +24,7 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>().post(
     const config = await getModel(c.env, completionModelIdx);
 
     const completionResult = await generateText({
-      system: completionSystemPrompt,
+      instructions: completionSystemPrompt,
       model: config.model,
       messages: [{ role: "user", content: context }],
       maxOutputTokens: 64,

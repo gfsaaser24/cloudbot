@@ -138,7 +138,7 @@ export const generateFile = ({ userId, dataStream, env }: GenerateFileProps) =>
         const config = await getModel(env, artifactModelIdx);
         const result = await generateText({
           model: config.model,
-          system: buildSystemPrompt(format),
+          instructions: buildSystemPrompt(format),
           prompt: `Generate a ${format.toUpperCase()} file titled "${title}".\n\nRequirements:\n${description}`,
         });
 

@@ -10,7 +10,7 @@ export async function generateTitleFromUserMessage({
 }) {
   const { text: title } = await generateText({
     model,
-    system: `\n
+    instructions: `\n
       - Generate a short title based on the first message a user begins a conversation with
       - Ensure it is not more than a few words long
       - Do not use quotes or colons`,

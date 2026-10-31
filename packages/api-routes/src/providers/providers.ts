@@ -48,17 +48,6 @@ export const getModel = async (
       };
     }
 
-    case "workers-ai": {
-      const { createWorkersAI } = await import("workers-ai-provider");
-
-      const workersai = createWorkersAI({ binding: env.AI });
-
-      return {
-        model: workersai(chatModel.name),
-        providerOptions: {},
-      };
-    }
-
     case "openrouter": {
       return openRouterModel(chatModel.name, options);
     }
