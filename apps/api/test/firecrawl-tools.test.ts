@@ -184,6 +184,18 @@ describe("firecrawl tools", () => {
     expect(calls.map((c) => `${c.method} ${c.url.pathname}`)).toEqual(["POST /v2/crawl", "DELETE /v2/crawl/crawl-1"]);
   });
 
+  it("says a job it couldn't record or cancel may still be running, and names it", async () => {
+    respond = ({ method }) =>
+      method === "DELETE" ? new Response("unavailable", { status: 503 }) : Response.json({ success: true, id: "crawl-1" });
+    jobsTable.insertFails = true;
+
+    const output = await tools().firecrawlCrawl.execute!({ url: "https://a.com", limit: 10 }, options);
+
+    expect(output).toMatchObject({ ok: false, id: "crawl-1" });
+    expect(output.summary).toMatch(/may still be running/);
+    expect(output.summary).not.toMatch(/so it was cancelled/);
+  });
+
   it("tells the model Firecrawl is out of credits instead of failing", async () => {
     respond = () => new Response(JSON.stringify({ success: false, error: "Payment required" }), { status: 402 });
 

@@ -61,15 +61,23 @@ const logger = createLogger("firecrawl-tools");
 
 // Records a job or session that just started. If the record can't be saved,
 // nobody could reach the job to check or stop it, so it is cancelled and the
-// failure returned.
+// failure returned. If cancelling fails too, the failure says the job may
+// still be running and names it, so it can be stopped by hand.
 async function recordJob(userId: string, kind: JobKind, id: string): Promise<FirecrawlOutput | undefined> {
   try {
     await db().insert(firecrawlJobs).values({ id, userId, kind });
     return undefined;
   } catch (error) {
     logger.error("Could not record a Firecrawl job", { kind, id, error });
-    await firecrawlRequest("DELETE", kind === "interact" ? `/interact/${id}` : `${JOB_PATH[kind]}/${id}`);
-    return failed("The job couldn't be recorded, so it was cancelled. Try again.");
+    const cancel = await firecrawlRequest("DELETE", kind === "interact" ? `/interact/${id}` : `${JOB_PATH[kind]}/${id}`);
+    if (cancel.ok) return failed("The job couldn't be recorded, so it was cancelled. Try again.");
+    logger.error("Could not cancel an unrecorded Firecrawl job", { kind, id, error: cancel.error });
+    return {
+      ...failed(
+        `The job couldn't be recorded, and cancelling it failed (${cancel.error}), so ${kind} ${id} may still be running and can't be checked or stopped from this chat. Tell the user before starting it again.`,
+      ),
+      id,
+    };
   }
 }
 
