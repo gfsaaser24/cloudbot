@@ -2,6 +2,11 @@ import { type extractFromDocumentsOutput } from "../lib/tools/extract-from-docum
 import { type WebSource } from "../lib/tools/extract-from-web.js";
 import { type fetchWebContentOutput } from "../lib/tools/fetch-web-content.js";
 import {
+  type firecrawlInputs,
+  type FirecrawlOutput,
+  type FirecrawlToolName,
+} from "../lib/tools/firecrawl-tools.js";
+import {
   type getImportStatusInput,
   type getImportStatusOutput,
   type importYouTubeTranscriptsInput,
@@ -18,7 +23,14 @@ import {
 import type * as z from "zod";
 import { type ArtifactKind } from "../schemas/artifact-schema.js";
 
-export type CustomUITools = {
+type FirecrawlUITools = {
+  [Name in FirecrawlToolName]: {
+    input: z.infer<(typeof firecrawlInputs)[Name]>;
+    output: FirecrawlOutput;
+  };
+};
+
+export type CustomUITools = FirecrawlUITools & {
   extractFromWeb: {
     input: { informationToExtract: string };
     output: { extractedInformation: string; sources: WebSource[] };

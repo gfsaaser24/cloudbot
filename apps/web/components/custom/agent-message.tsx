@@ -16,6 +16,8 @@ import {
   ToolExtractFromDocuments,
   ToolExtractFromWeb,
   ToolFetchWebContent,
+  ToolFirecrawl,
+  type FirecrawlToolPart,
   ToolGenerateFile,
   ToolGetImportStatus,
   ToolImportYouTubeTranscripts,
@@ -92,16 +94,24 @@ export const AgentMessage = ({
   }, [message.parts]);
 
   const webSources = useMemo(() => {
-    return message.parts
-      .filter(
-        (part) =>
-          part.type === "tool-extractFromWeb" &&
-          part.state === "output-available" &&
-          part.output?.sources,
-      )
-      .flatMap(
-        (part) => (part as { output: { sources: WebSource[] } }).output.sources,
-      );
+    return message.parts.flatMap((part): WebSource[] => {
+      // Saved chats from before Firecrawl became the web layer.
+      if (part.type === "tool-extractFromWeb") {
+        return part.state === "output-available"
+          ? (part.output?.sources ?? [])
+          : [];
+      }
+      if (part.type.startsWith("tool-firecrawl")) {
+        const { state, output } = part as FirecrawlToolPart;
+        if (state !== "output-available") return [];
+        return (output.links ?? []).map((link) => ({
+          id: link.url,
+          url: link.url,
+          title: link.title ?? link.url,
+        }));
+      }
+      return [];
+    });
   }, [message.parts]);
 
   return (
@@ -182,6 +192,19 @@ export const AgentMessage = ({
 
                   case "tool-getImportStatus":
                     return <ToolGetImportStatus key={index} part={part} />;
+
+                  case "tool-firecrawlScrape":
+                  case "tool-firecrawlSearch":
+                  case "tool-firecrawlMap":
+                  case "tool-firecrawlCrawl":
+                  case "tool-firecrawlBatchScrape":
+                  case "tool-firecrawlAgent":
+                  case "tool-firecrawlJobStatus":
+                  case "tool-firecrawlInteract":
+                  case "tool-firecrawlParse":
+                  case "tool-firecrawlMonitor":
+                  case "tool-firecrawlCreditUsage":
+                    return <ToolFirecrawl key={index} part={part} />;
 
                   case "dynamic-tool":
                     return <ToolDynamic key={index} part={part} />;

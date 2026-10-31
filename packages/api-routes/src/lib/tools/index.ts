@@ -7,12 +7,12 @@ import {
   extractFromDocuments,
   extractFromDocumentsOutput,
 } from "./extract-from-documents.js";
-import { extractFromWeb } from "./extract-from-web.js";
 import {
   fetchWebContent,
   fetchWebContentInput,
   fetchWebContentOutput,
 } from "./fetch-web-content.js";
+import { firecrawlInputs, firecrawlOutput } from "./firecrawl-tools.js";
 import { generateFile } from "./generate-file.js";
 import { readFile, readFileInput, readFileOutput } from "./read-file.js";
 import {
@@ -31,7 +31,6 @@ import {
 import { updateDocument } from "./update-document.js";
 
 export const tools = {
-  extractFromWeb: extractFromWeb,
   extractFromDocuments: extractFromDocuments,
   readFile: readFile,
   createDocument: createDocument,
@@ -126,5 +125,49 @@ export const mockedTools = {
   getImportStatus: tool({
     inputSchema: getImportStatusInput,
     outputSchema: getImportStatusOutput,
+  }),
+  firecrawlScrape: tool({
+    inputSchema: firecrawlInputs.firecrawlScrape,
+    outputSchema: firecrawlOutput,
+  }),
+  firecrawlSearch: tool({
+    inputSchema: firecrawlInputs.firecrawlSearch,
+    outputSchema: firecrawlOutput,
+  }),
+  firecrawlMap: tool({
+    inputSchema: firecrawlInputs.firecrawlMap,
+    outputSchema: firecrawlOutput,
+  }),
+  firecrawlCrawl: tool({
+    inputSchema: firecrawlInputs.firecrawlCrawl,
+    outputSchema: firecrawlOutput,
+  }),
+  firecrawlBatchScrape: tool({
+    inputSchema: firecrawlInputs.firecrawlBatchScrape,
+    outputSchema: firecrawlOutput,
+  }),
+  firecrawlAgent: tool({
+    inputSchema: firecrawlInputs.firecrawlAgent,
+    outputSchema: firecrawlOutput,
+  }),
+  firecrawlJobStatus: tool({
+    inputSchema: firecrawlInputs.firecrawlJobStatus,
+    outputSchema: firecrawlOutput,
+  }),
+  firecrawlInteract: tool({
+    inputSchema: firecrawlInputs.firecrawlInteract,
+    outputSchema: firecrawlOutput,
+  }),
+  firecrawlParse: tool({
+    inputSchema: firecrawlInputs.firecrawlParse,
+    outputSchema: firecrawlOutput,
+  }),
+  firecrawlMonitor: tool({
+    inputSchema: firecrawlInputs.firecrawlMonitor,
+    outputSchema: firecrawlOutput,
+  }),
+  firecrawlCreditUsage: tool({
+    inputSchema: firecrawlInputs.firecrawlCreditUsage,
+    outputSchema: firecrawlOutput,
   }),
 };

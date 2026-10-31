@@ -1,15 +1,20 @@
 "use client";
 
+import { useChatControl } from "@/contexts/chat-control-context";
 import { useDataStream } from "@/contexts/data-stream-context";
 import { type ContextFilter, useFilter } from "@/contexts/filter-context";
+import { ToolApprovalProvider } from "@/contexts/tool-approval-context";
 import { useWebTranslations } from "@/contexts/web-translations";
 import { useChat } from "@ai-sdk/react";
 import { type CustomUIMessage } from "@workspace/api-routes/types/custom-ui-message";
 import { useSharedTranslations } from "@workspace/ui/contexts/shared-translations-context";
 import { apiFetcher } from "@workspace/ui/lib/fetcher";
 import { generateUUID } from "@workspace/ui/lib/utils";
-import { DefaultChatTransport } from "ai";
-import { useEffect, useState } from "react";
+import {
+  DefaultChatTransport,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
+} from "ai";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ChatHeader } from "./chat-header";
 import { Greeting } from "./greeting";
@@ -28,6 +33,8 @@ export function Chat({
   const { webT } = useWebTranslations();
   const { setFilter } = useFilter();
   const { setDataStream } = useDataStream();
+  const { selectedChatModel, isTemporary, reasoningEnabled, webSearchEnabled } =
+    useChatControl();
 
   const [input, setInput] = useState("");
 
@@ -51,12 +58,21 @@ export function Chat({
     }
   }, [chatId, initialMessages.length]);
 
-  const { sendMessage, messages, setMessages, status, stop, regenerate } =
-    useChat<CustomUIMessage>({
+  const {
+    sendMessage,
+    messages,
+    setMessages,
+    status,
+    stop,
+    regenerate,
+    addToolApprovalResponse,
+  } = useChat<CustomUIMessage>({
       id: chatId,
       messages: initialMessages,
       generateId: generateUUID,
       throttle: 100,
+      // Once every approval request is answered, continue the reply.
+      sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
       onData: (dataPart) => {
         setDataStream((prevDataStream) => [...prevDataStream, dataPart]);
       },
@@ -68,13 +84,38 @@ export function Chat({
           return {
             body: {
               id: chatId,
-              messages: [messages.at(-1)],
+              // A saved chat's history is on the server; a temporary chat's
+              // only exists here, so it is sent whole.
+              messages: body?.temporary ? messages : [messages.at(-1)],
               ...body,
             },
           };
         },
       }),
     });
+
+  const respondToApproval = useCallback(
+    (approvalId: string, approved: boolean) =>
+      addToolApprovalResponse({
+        id: approvalId,
+        approved,
+        options: {
+          body: {
+            model: selectedChatModel.id,
+            temporary: isTemporary,
+            reasoning: selectedChatModel.reasoning && reasoningEnabled,
+            webSearch: webSearchEnabled,
+          },
+        },
+      }),
+    [
+      addToolApprovalResponse,
+      selectedChatModel,
+      isTemporary,
+      reasoningEnabled,
+      webSearchEnabled,
+    ],
+  );
 
   const chatState = {
     chatId,
@@ -91,13 +132,15 @@ export function Chat({
         {messages.length === 0 ? (
           <Greeting />
         ) : (
-          <Messages
-            chatId={chatId}
-            messages={messages}
-            setMessages={setMessages}
-            status={status}
-            regenerate={regenerate}
-          />
+          <ToolApprovalProvider respond={respondToApproval}>
+            <Messages
+              chatId={chatId}
+              messages={messages}
+              setMessages={setMessages}
+              status={status}
+              regenerate={regenerate}
+            />
+          </ToolApprovalProvider>
         )}
 
         <form className="mx-auto w-full -translate-y-1 sm:px-4 sm:pb-4 md:max-w-3xl md:px-6 md:pb-6">

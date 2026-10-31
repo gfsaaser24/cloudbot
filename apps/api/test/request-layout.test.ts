@@ -3,7 +3,6 @@ import { mergeIncomingMessages } from "@workspace/api-routes/lib/chat/chat-histo
 import { type ChatRequest } from "@workspace/api-routes/lib/chat/chat-request.js";
 import { StandardChatHandler } from "@workspace/api-routes/lib/chat/standard-chat-handler.js";
 import { extractFromDocuments } from "@workspace/api-routes/lib/tools/extract-from-documents.js";
-import { extractFromWeb } from "@workspace/api-routes/lib/tools/extract-from-web.js";
 import { readFile } from "@workspace/api-routes/lib/tools/read-file.js";
 import { type Bindings } from "@workspace/api-routes/types/bindings.js";
 import { type CustomUIMessage } from "@workspace/api-routes/types/custom-ui-message.js";
@@ -17,6 +16,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const calls = vi.hoisted(() => ({
   model: [] as unknown[],
   saved: [] as unknown[],
+  // When set, the next model call asks for this tool instead of answering.
+  nextToolCall: undefined as { toolName: string; input: unknown } | undefined,
+  // How often the selected folders were permission-checked.
+  folderChecks: 0,
 }));
 
 const { PROJECT_FOLDER, OTHER_FOLDER, PROMPT_ID } = vi.hoisted(() => ({
@@ -28,6 +31,25 @@ const { PROJECT_FOLDER, OTHER_FOLDER, PROMPT_ID } = vi.hoisted(() => ({
 const chatModel = new MockLanguageModelV4({
   doStream: async (options) => {
     calls.model.push(options);
+    const toolCall = calls.nextToolCall;
+    calls.nextToolCall = undefined;
+    if (toolCall) {
+      return {
+        stream: simulateReadableStream({
+          chunks: [
+            { type: "tool-call", toolCallId: "call-1", toolName: toolCall.toolName, input: JSON.stringify(toolCall.input) },
+            {
+              type: "finish",
+              finishReason: { unified: "tool-calls", raw: "tool_calls" },
+              usage: {
+                inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                outputTokens: { total: 1, text: 1, reasoning: 0 },
+              },
+            },
+          ],
+        }),
+      };
+    }
     return {
       stream: simulateReadableStream({
         chunks: [
@@ -77,7 +99,7 @@ vi.mock("@workspace/api-routes/lib/queries/prompts.js", () => ({
 
 vi.mock("@workspace/api-routes/lib/chat/project-context.js", async (importActual) => ({
   ...(await importActual<typeof import("@workspace/api-routes/lib/chat/project-context.js")>()),
-  loadProject: async () => ({
+  loadProject: async (folderId: string | undefined) => folderId && ({
     folder: { id: PROJECT_FOLDER, name: "Season 3", description: null },
     fileNames: ["episode-1.md"],
     hasMoreFiles: false,
@@ -89,7 +111,10 @@ vi.mock("@workspace/server/drizzle/db.js", () => ({
   db: () => ({
     select: () => ({
       from: () => ({
-        where: async () => [{ id: OTHER_FOLDER, visibility: "private", folderId: OTHER_FOLDER, owner: "user-1" }],
+        where: async () => {
+          calls.folderChecks += 1;
+          return [{ id: OTHER_FOLDER, visibility: "private", folderId: OTHER_FOLDER, owner: "user-1" }];
+        },
       }),
     }),
   }),
@@ -118,7 +143,11 @@ function userTurn(id: string, text: string, selection: Selection = {}, extraPart
 }
 
 // Like ChatRequest.from: the stored chat plus the client's new message.
-async function runTurn(stored: CustomUIMessage[], incoming: CustomUIMessage) {
+async function runTurn(
+  stored: CustomUIMessage[],
+  incoming: CustomUIMessage,
+  { webSearch = false, inProject = true } = {},
+) {
   const messages = mergeIncomingMessages(stored, [incoming]);
   const request = {
     id: "chat-1",
@@ -126,10 +155,11 @@ async function runTurn(stored: CustomUIMessage[], incoming: CustomUIMessage) {
     lastMessage: messages.at(-1),
     user: { id: "user-1" },
     model: "anthropic/claude-sonnet-5.5",
-    folderId: PROJECT_FOLDER,
+    folderId: inProject ? PROJECT_FOLDER : undefined,
     userLocation: { city: "Lisbon", region: "Lisbon", country: "PT", timezone: "Europe/Lisbon" },
     createNewChat: false,
     isTemporary: false,
+    webSearchEnabled: webSearch,
   } as unknown as ChatRequest;
 
   const response = await new StandardChatHandler({} as Bindings, request).handleRequest();
@@ -188,7 +218,7 @@ describe("request layout across turns", () => {
     expect(JSON.stringify(firstUser(first))).toMatch(/October 30, 2026[\s\S]*Lisbon[\s\S]*Season 3/);
     expect(toolNames(second)).toEqual(toolNames(first));
     expect(toolNames(first)).toEqual([...toolNames(first)].sort());
-    expect(toolNames(first)).toEqual(expect.arrayContaining(["extractFromDocuments", "readFile", "extractFromWeb"]));
+    expect(toolNames(first)).toEqual(expect.arrayContaining(["extractFromDocuments", "readFile"]));
   });
 
   it("saves the date, location, project and selected instructions on the new user message", async () => {
@@ -263,18 +293,6 @@ describe("tools whose precondition is off", () => {
     expect(output).toMatchObject({ found: false, message: expect.stringMatching(/no folder or file is selected/i) });
     expect(get).not.toHaveBeenCalled();
   });
-
-  it("extractFromWeb explains that web search is off", async () => {
-    const tool = extractFromWeb({
-      env: {} as Bindings,
-      userLocation: {},
-      dataStream: writer,
-      enabled: false,
-    } as Parameters<typeof extractFromWeb>[0]);
-
-    const output = await tool.execute?.({ informationToExtract: "news" }, toolCall);
-    expect(JSON.stringify(output)).toMatch(/web search is turned off/i);
-  });
 });
 
 describe("prompt caching settings", () => {
@@ -311,5 +329,84 @@ describe("prompt caching settings", () => {
 
   it("puts the chat id in session_id", async () => {
     expect((await requestBody("openai/gpt-6-luna")).session_id).toBe("chat-1");
+  });
+});
+
+describe("tool approval", () => {
+  // Turn 1 of an approval: the model asks to crawl, and the reply waits.
+  async function askToCrawl(selection: Selection = {}, inProject = true) {
+    vi.stubEnv("FIRECRAWL_API_KEY", "fc-test");
+    const firecrawl: string[] = [];
+    vi.stubGlobal("fetch", async (url: URL | string) => {
+      firecrawl.push(new URL(String(url)).pathname);
+      return Response.json({ success: true, id: "crawl-1" });
+    });
+    calls.nextToolCall = { toolName: "firecrawlCrawl", input: { url: "https://a.com", limit: 10 } };
+    await runTurn([], userTurn("u1", "crawl a.com", selection), { webSearch: true, inProject });
+    const stored = [...(calls.saved as CustomUIMessage[])];
+    const reply = stored.find((m) => m.role === "assistant")!;
+    return { firecrawl, stored, reply };
+  }
+
+  // The client's copy of the reply with the user's answer.
+  const answered = (reply: CustomUIMessage, approved: boolean) =>
+    ({
+      ...reply,
+      parts: reply.parts.map((p) =>
+        p.type === "tool-firecrawlCrawl" && "approval" in p && p.approval
+          ? { ...p, state: "approval-responded", approval: { id: p.approval.id, approved } }
+          : p,
+      ),
+    }) as CustomUIMessage;
+
+  it("doesn't run a crawl the user declined", async () => {
+    const { firecrawl, stored, reply } = await askToCrawl();
+    await runTurn(stored, answered(reply, false), { webSearch: true });
+
+    expect(firecrawl).toEqual([]);
+  });
+
+  it("keeps the selected folders when the reply continues after approval", async () => {
+    // Outside a project, so only the message's own selection selects folders.
+    const { stored, reply } = await askToCrawl({ folders: [OTHER_FOLDER] }, false);
+    const checksBefore = calls.folderChecks;
+
+    await runTurn(stored, answered(reply, true), { webSearch: true, inProject: false });
+    expect(calls.folderChecks).toBeGreaterThan(checksBefore);
+  });
+
+  it("pauses a crawl for the user's approval, then runs it and answers", async () => {
+    vi.stubEnv("FIRECRAWL_API_KEY", "fc-test");
+    const firecrawl: string[] = [];
+    vi.stubGlobal("fetch", async (url: URL | string) => {
+      firecrawl.push(new URL(String(url)).pathname);
+      return Response.json({ success: true, id: "crawl-1" });
+    });
+
+    // Turn 1: the model asks to crawl; nothing runs until the user answers.
+    calls.nextToolCall = { toolName: "firecrawlCrawl", input: { url: "https://a.com", limit: 10 } };
+    await runTurn([], userTurn("u1", "crawl a.com"), { webSearch: true });
+    expect(firecrawl).toEqual([]);
+
+    const stored = [...(calls.saved as CustomUIMessage[])];
+    const reply = stored.find((m) => m.role === "assistant")!;
+    const request = reply.parts.find((p) => p.type === "tool-firecrawlCrawl");
+    expect(request).toMatchObject({ state: "approval-requested" });
+
+    // Turn 2: the client sends the approval; the crawl runs and the model answers.
+    const approved = {
+      ...reply,
+      parts: reply.parts.map((p) =>
+        p.type === "tool-firecrawlCrawl" && "approval" in p && p.approval
+          ? { ...p, state: "approval-responded", approval: { id: p.approval.id, approved: true } }
+          : p,
+      ),
+    } as CustomUIMessage;
+    const answer = await runTurn(stored, approved, { webSearch: true });
+
+    expect(firecrawl).toEqual(["/v2/crawl"]);
+    expect(JSON.stringify(answer.prompt)).toContain("crawl-1");
+    const updated = (calls.saved as CustomUIMessage[]).findLast((m) => m.id === reply.id)!;
+    expect(updated.parts.find((p) => p.type === "tool-firecrawlCrawl")).toMatchObject({ state: "output-available" });
   });
 });

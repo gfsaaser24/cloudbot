@@ -13,8 +13,6 @@ export interface ModelOptions {
   reasoning?: boolean;
   // Lets OpenRouter attribute usage to the CloudChat user.
   userId?: string;
-  // Use OpenRouter's web search plugin (results come back as URL sources).
-  webSearch?: boolean;
   // The chat id: keeps a chat's requests on the same provider, where its prompt
   // is already cached.
   sessionId?: string;
@@ -115,7 +113,7 @@ function answerSettings(model: CatalogModel | undefined, reasoning: boolean) {
 
 async function openRouterModel(
   modelId: string,
-  { userId, webSearch, sessionId }: ModelOptions,
+  { userId, sessionId }: ModelOptions,
   // Only for a chat answer; titles, search and artifacts keep the defaults.
   answer: Partial<ReturnType<typeof answerSettings>> = {},
 ): Promise<Config> {
@@ -144,7 +142,6 @@ async function openRouterModel(
         // Lets every model read PDFs, not just ones with native file input.
         // "cloudflare-ai" converts with Workers AI at no cost ("pdf-text" is deprecated).
         { id: "file-parser", pdf: { engine: "cloudflare-ai" } },
-        ...(webSearch ? [{ id: "web" as const, max_results: 8 }] : []),
       ],
     }),
     providerOptions: sessionId ? { openrouter: { session_id: sessionId } } : {},

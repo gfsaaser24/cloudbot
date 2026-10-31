@@ -140,9 +140,13 @@ export abstract class ChatHandler {
     return context;
   }
 
+  // The selection sent with the user's latest message. A continuation (the
+  // reply resumed after a tool approval) keeps the selection of its turn.
   protected getContextFilter(): ContextFilter | undefined {
-    const metadata = this.request.lastMessage.metadata;
-    return metadata?.contextFilter;
+    const latestUserMessage = this.request.messages
+      .filter((message) => message.role === "user")
+      .at(-1);
+    return latestUserMessage?.metadata?.contextFilter;
   }
 
   protected getAttachments(): Attachment[] {
