@@ -1,3 +1,7 @@
+import {
+  type analyzeFolderInput,
+  type analyzeFolderOutput,
+} from "../lib/tools/analyze-folder.js";
 import { type extractFromDocumentsOutput } from "../lib/tools/extract-from-documents.js";
 import { type WebSource } from "../lib/tools/extract-from-web.js";
 import { type fetchWebContentOutput } from "../lib/tools/fetch-web-content.js";
@@ -42,6 +46,10 @@ export type CustomUITools = FirecrawlUITools & {
   readFile: {
     input: z.infer<typeof readFileInput>;
     output: z.infer<typeof readFileOutput>;
+  };
+  analyzeFolder: {
+    input: z.infer<typeof analyzeFolderInput>;
+    output: z.infer<typeof analyzeFolderOutput>;
   };
   createDocument: {
     input: { title: string; kind: ArtifactKind; description: string };

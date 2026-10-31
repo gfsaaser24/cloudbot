@@ -2,6 +2,7 @@ import * as z from "zod";
 
 import { tool } from "ai";
 import { artifactSchema } from "../../schemas/artifact-schema.js";
+import { analyzeFolderInput, analyzeFolderOutput } from "./analyze-folder.js";
 import { createDocument } from "./create-document.js";
 import {
   extractFromDocuments,
@@ -68,6 +69,10 @@ export const mockedTools = {
   readFile: tool({
     inputSchema: readFileInput,
     outputSchema: readFileOutput,
+  }),
+  analyzeFolder: tool({
+    inputSchema: analyzeFolderInput,
+    outputSchema: analyzeFolderOutput,
   }),
   createDocument: tool({
     inputSchema: z.object({

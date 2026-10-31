@@ -83,6 +83,44 @@ export async function findSelectedFile(
   );
 }
 
+// A selected file's full text: as stored for text files, converted to Markdown
+// for documents and PDFs.
+export async function readSelectedFileText(
+  env: Bindings,
+  userId: string,
+  file: Pick<FileMetadata, "name" | "visibility" | "folderId">,
+): Promise<{ ok: true; text: string } | { ok: false; message: string }> {
+  const type = fileTypeOf(file.name);
+  if (!type || type.kind === "image") {
+    return { ok: false, message: "This file isn't text, so it can't be read." };
+  }
+
+  const object = await env.CLOUDBOT_BUCKET.get(fileKey(userId, file));
+  if (!object) {
+    return {
+      ok: false,
+      message: "The file is listed but its contents are missing.",
+    };
+  }
+
+  if (type.kind === "text") {
+    return { ok: true, text: await object.text() };
+  }
+
+  const result = await env.AI.toMarkdown({
+    name: file.name,
+    blob: await object.blob(),
+  });
+  if (result.format === "error") {
+    logger.warn("Could not convert file to Markdown", {
+      filename: file.name,
+      error: result.error,
+    });
+    return { ok: false, message: "This file could not be read." };
+  }
+  return { ok: true, text: result.data };
+}
+
 export const readFile = ({
   env,
   userId,
@@ -118,56 +156,23 @@ export const readFile = ({
         };
       }
 
-      const type = fileTypeOf(file.name);
-      if (!type || type.kind === "image") {
-        return {
-          found: false,
-          filename,
-          folderId: file.folderId,
-          message: "This file isn't text, so it can't be read.",
-        };
-      }
-
       try {
-        const object = await env.CLOUDBOT_BUCKET.get(fileKey(userId, file));
-        if (!object) {
+        const read = await readSelectedFileText(env, userId, file);
+        if (!read.ok) {
           return {
             found: false,
             filename,
             folderId: file.folderId,
-            message: "The file is listed but its contents are missing.",
+            message: read.message,
           };
-        }
-
-        let text: string;
-        if (type.kind === "text") {
-          text = await object.text();
-        } else {
-          const result = await env.AI.toMarkdown({
-            name: file.name,
-            blob: await object.blob(),
-          });
-          if (result.format === "error") {
-            logger.warn("Could not convert file to Markdown", {
-              filename,
-              error: result.error,
-            });
-            return {
-              found: false,
-              filename,
-              folderId: file.folderId,
-              message: "This file could not be read.",
-            };
-          }
-          text = result.data;
         }
 
         return {
           found: true,
           filename,
           folderId: file.folderId,
-          text: text.slice(0, MAX_FILE_CHARS),
-          truncated: text.length > MAX_FILE_CHARS,
+          text: read.text.slice(0, MAX_FILE_CHARS),
+          truncated: read.text.length > MAX_FILE_CHARS,
         };
       } catch (error) {
         logger.error("Error in readFile tool", error);

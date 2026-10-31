@@ -1,4 +1,4 @@
-import { prepareFinalAnswer, stopWhen } from "@workspace/api-routes/lib/chat/stop-conditions.js";
+import { callCost, turnLimits } from "@workspace/api-routes/lib/chat/stop-conditions.js";
 import { type CatalogModel } from "@workspace/api-routes/providers/openrouter-catalog.js";
 import { type Bindings } from "@workspace/api-routes/types/bindings.js";
 import { generateText, jsonSchema, tool } from "ai";
@@ -138,6 +138,22 @@ describe("chat model menu", () => {
   });
 });
 
+describe("what a model call cost", () => {
+  it("counts the provider's charge for a bring-your-own-key model, which OpenRouter reports as cost 0", () => {
+    expect(callCost({ openrouter: { usage: { cost: 0, costDetails: { upstreamInferenceCost: 0.5 } } } })).toBe(0.5);
+  });
+
+  it("counts OpenRouter's cost once for other models", () => {
+    expect(callCost({ openrouter: { usage: { cost: 0.0071, costDetails: { upstreamInferenceCost: 0.0071 } } } })).toBe(0.0071);
+    expect(callCost({ openrouter: { usage: { cost: 0.25 } } })).toBe(0.25);
+  });
+
+  it("counts nothing when no usage was reported", () => {
+    expect(callCost(undefined)).toBe(0);
+    expect(callCost({ openrouter: {} })).toBe(0);
+  });
+});
+
 describe("the tool loop", () => {
   // A model that keeps calling a tool until it is told to answer, reporting
   // the given OpenRouter cost for each step. It records the tool_choice of
@@ -177,8 +193,8 @@ describe("the tool loop", () => {
 
   const tools = { search: tool({ inputSchema: jsonSchema({ type: "object", properties: {} }), execute: async () => "more results" }) };
 
-  const run = (model: MockLanguageModelV4) =>
-    generateText({ model, tools, prompt: "research this", stopWhen, prepareStep: prepareFinalAnswer });
+  const run = (model: MockLanguageModelV4, spend = { steps: 0, tools: 0 }) =>
+    generateText({ model, tools, prompt: "research this", ...turnLimits(spend) });
 
   it("keeps going while the cost is under $2 and steps are under 30, then ends with an answer", async () => {
     const result = await run(loopingModel(0.01).model);
@@ -205,6 +221,13 @@ describe("the tool loop", () => {
 
     expect(result.text).toBe("Here is what I found.");
     expect(new Set(toolChoices)).toEqual(new Set(["auto"]));
+  });
+
+  it("counts what tools spent toward the ceiling", async () => {
+    // $1.50 already spent by tools: 1.5 + 0.1 + 0.1 = 1.7 (85%) -> answer.
+    const result = await run(loopingModel(0.1).model, { steps: 0, tools: 1.5 });
+    expect(result.steps).toHaveLength(3);
+    expect(result.text).toBe("Here is what I found.");
   });
 
   it("stops when a single step costs more than the whole ceiling", async () => {
