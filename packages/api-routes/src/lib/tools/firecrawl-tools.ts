@@ -21,6 +21,11 @@ const MAX_CRAWL_PAGES = 100;
 const MAX_BATCH_URLS = 100;
 const MAX_AGENT_CREDITS = 500;
 const MAX_MAP_LINKS = 1_000;
+// Browser sessions bill while open; one the model forgets to stop ends itself.
+const DEFAULT_SESSION_SECONDS = 600;
+
+const link = z.object({ url: z.string(), title: z.string().optional() });
+type Link = z.infer<typeof link>;
 
 export const firecrawlOutput = z.object({
   ok: z.boolean(),
@@ -30,9 +35,7 @@ export const firecrawlOutput = z.object({
   id: z.string().optional(),
   status: z.string().optional(),
   // Pages the answer can cite.
-  links: z
-    .array(z.object({ url: z.string(), title: z.string().optional() }))
-    .optional(),
+  links: z.array(link).optional(),
   // A live view of an interact session.
   liveViewUrl: z.string().optional(),
   // The result for the model, already capped in size.
@@ -40,8 +43,6 @@ export const firecrawlOutput = z.object({
 });
 
 export type FirecrawlOutput = z.infer<typeof firecrawlOutput>;
-
-type Link = { url: string; title?: string };
 
 // Ids go into URL paths, so only plain ids are accepted.
 const jobId = z.string().regex(/^[\w-]{1,100}$/, "Not a Firecrawl id");
@@ -60,12 +61,14 @@ function clipJson(value: unknown, max: number): unknown {
   return json.length > max ? clip(json, max) : value;
 }
 
-// Keeps a list under LIST_CHARS by dropping items from the end.
-function fitList<T>(items: T[]): { items: T[]; omitted: number } {
+// Keeps a list under LIST_CHARS by dropping items from the end. An item with a
+// URL also counts the citation link the output lists for it.
+function fitList<T extends Partial<Link>>(items: T[]): { items: T[]; omitted: number } {
   let size = 2;
   const kept: T[] = [];
   for (const item of items) {
     size += JSON.stringify(item).length + 1;
+    if (item.url) size += JSON.stringify({ url: item.url, title: item.title }).length + 1;
     if (size > LIST_CHARS) break;
     kept.push(item);
   }
@@ -137,7 +140,7 @@ const scrapeAction = z.union([
   z.object({ type: z.literal("pdf"), format: z.string().optional(), landscape: z.boolean().optional() }),
 ]);
 
-export const firecrawlScrapeInput = z.object({
+const firecrawlScrapeInput = z.object({
   url: z.url(),
   formats: z
     .array(scrapeFormat)
@@ -213,7 +216,8 @@ function shapePage(url: string, page: ScrapeData) {
     title: firstString(page.metadata?.title) ?? url,
     url: page.metadata?.sourceURL ?? page.metadata?.url ?? url,
     content: clip(content, Math.max(budget, 0)),
-    ...(extras as object),
+    // Cut-off extras are a string, which can't be spread.
+    ...(typeof extras === "object" && extras !== null ? extras : { extras }),
   };
 }
 
@@ -221,7 +225,7 @@ function shapePage(url: string, page: ScrapeData) {
 
 const searchSource = z.enum(["web", "news", "images", "research", "gov", "developer"]);
 
-export const firecrawlSearchInput = z.object({
+const firecrawlSearchInput = z.object({
   query: z.string(),
   sources: z
     .array(searchSource)
@@ -375,6 +379,12 @@ async function searchOne(
 
 const crawlKind = z.enum(["crawl", "batchScrape", "agent"]);
 
+const JOB_LABEL: Record<z.infer<typeof crawlKind>, string> = {
+  crawl: "Crawl",
+  batchScrape: "Batch scrape",
+  agent: "Agent",
+};
+
 const JOB_PATH: Record<z.infer<typeof crawlKind>, string> = {
   crawl: "/crawl",
   batchScrape: "/batch/scrape",
@@ -397,7 +407,7 @@ type AgentStatus = {
   creditsUsed?: number;
 };
 
-function shapePageList(kind: string, job: PageList): FirecrawlOutput {
+function shapePageList(kind: z.infer<typeof crawlKind>, job: PageList): FirecrawlOutput {
   const pages = (job.data ?? []).map((page) => {
     const url = page.metadata?.sourceURL ?? page.metadata?.url ?? "";
     return {
@@ -412,7 +422,7 @@ function shapePageList(kind: string, job: PageList): FirecrawlOutput {
   return {
     ok: true,
     status: job.status,
-    summary: `${kind} ${job.status ?? "status"}: ${progress}${job.creditsUsed !== undefined ? `, ${job.creditsUsed} credits used` : ""}.${omitted ? ` ${omitted} more pages not listed.` : ""} Read a page in full with firecrawlScrape.`,
+    summary: `${JOB_LABEL[kind]} ${job.status ?? "status"}: ${progress}${job.creditsUsed !== undefined ? `, ${job.creditsUsed} credits used` : ""}.${omitted ? ` ${omitted} more pages not listed.` : ""} Read a page in full with firecrawlScrape.`,
     links: items.map(({ url, title }) => ({ url, title })),
     data: { pages: items, omitted },
   };
@@ -427,7 +437,8 @@ const interactAction = z.enum(["start", "execute", "stop"]);
 const monitorAction = z.enum(["list", "get", "create", "update", "delete", "run", "checks"]);
 // Monitors spend credits on a schedule, so anything that changes or runs one
 // needs the user's approval.
-const MONITOR_ACTIONS_NEEDING_APPROVAL = new Set(["create", "update", "delete", "run"]);
+const MONITOR_ACTIONS_NEEDING_APPROVAL: ReadonlySet<z.infer<typeof monitorAction>> =
+  new Set(["create", "update", "delete", "run"]);
 
 const monitorTarget = z.union([
   z.object({ type: z.literal("scrape"), urls: z.array(z.url()).min(1) }),
@@ -549,13 +560,11 @@ type Props = {
 
 // Registered on every turn; with web search off they explain instead of running.
 export function firecrawlTools({ env, userId, enabled, fileMetadata, folderMetadata }: Props) {
-  const approvalWhenEnabled = () => enabled;
-
   return {
     firecrawlScrape: tool({
       description:
         "Scrapes one URL and returns its content (Markdown by default), with optional formats (summary, links, images, screenshot, structured json, a question answered about the page, highlights, change tracking, branding) and browser actions before scraping. Use it to read any page in full, including pages listed by other Firecrawl tools.",
-      inputSchema: firecrawlScrapeInput,
+      inputSchema: firecrawlInputs.firecrawlScrape,
       outputSchema: firecrawlOutput,
       execute: async (input): Promise<FirecrawlOutput> => {
         if (!enabled) return WEB_OFF;
@@ -576,7 +585,7 @@ export function firecrawlTools({ env, userId, enabled, fileMetadata, folderMetad
     firecrawlSearch: tool({
       description:
         "Searches the web, news, images, research papers (arXiv, PubMed, DOI), government and legal sources, or developer docs and code, and returns titles, URLs and excerpts. Set scrapeResults to also get each web result's content. Cite results as [[web:url]].",
-      inputSchema: firecrawlSearchInput,
+      inputSchema: firecrawlInputs.firecrawlSearch,
       outputSchema: firecrawlOutput,
       execute: async (input): Promise<FirecrawlOutput> => {
         if (!enabled) return WEB_OFF;
@@ -619,7 +628,7 @@ export function firecrawlTools({ env, userId, enabled, fileMetadata, folderMetad
       description: `Starts crawling a website from a URL, following its links, up to ${MAX_CRAWL_PAGES} pages. Asks the user to approve first because it can use many credits. Returns a job id; check progress and results with firecrawlJobStatus (kind crawl).`,
       inputSchema: firecrawlInputs.firecrawlCrawl,
       outputSchema: firecrawlOutput,
-      needsApproval: approvalWhenEnabled,
+      needsApproval: enabled,
       execute: async (input): Promise<FirecrawlOutput> => {
         if (!enabled) return WEB_OFF;
         const limit = Math.min(input.limit, MAX_CRAWL_PAGES);
@@ -644,7 +653,7 @@ export function firecrawlTools({ env, userId, enabled, fileMetadata, folderMetad
       description: `Starts scraping many URLs at once (at most ${MAX_BATCH_URLS}). Asks the user to approve first. Returns a job id; check results with firecrawlJobStatus (kind batchScrape).`,
       inputSchema: firecrawlInputs.firecrawlBatchScrape,
       outputSchema: firecrawlOutput,
-      needsApproval: approvalWhenEnabled,
+      needsApproval: enabled,
       execute: async (input): Promise<FirecrawlOutput> => {
         if (!enabled) return WEB_OFF;
         const urls = input.urls.slice(0, MAX_BATCH_URLS);
@@ -666,7 +675,7 @@ export function firecrawlTools({ env, userId, enabled, fileMetadata, folderMetad
       description: `Starts Firecrawl's research agent, which searches, navigates and extracts what the prompt asks for, optionally into a JSON schema. Asks the user to approve first; spends at most ${MAX_AGENT_CREDITS} credits. Returns a job id; get the result with firecrawlJobStatus (kind agent).`,
       inputSchema: firecrawlInputs.firecrawlAgent,
       outputSchema: firecrawlOutput,
-      needsApproval: approvalWhenEnabled,
+      needsApproval: enabled,
       execute: async (input): Promise<FirecrawlOutput> => {
         if (!enabled) return WEB_OFF;
         const maxCredits = Math.min(input.maxCredits, MAX_AGENT_CREDITS);
@@ -729,7 +738,7 @@ export function firecrawlTools({ env, userId, enabled, fileMetadata, folderMetad
 
         const result = await firecrawlRequest<PageList>("GET", path);
         if (!result.ok) return failed(result.error);
-        return { ...shapePageList(kind === "crawl" ? "Crawl" : "Batch scrape", result.data), id };
+        return { ...shapePageList(kind, result.data), id };
       },
     }),
 
@@ -747,7 +756,7 @@ export function firecrawlTools({ env, userId, enabled, fileMetadata, folderMetad
             id: string;
             liveViewUrl?: string;
             expiresAt?: string;
-          }>("POST", "/interact", { body: { ttl: input.ttlSeconds } });
+          }>("POST", "/interact", { body: { ttl: input.ttlSeconds ?? DEFAULT_SESSION_SECONDS } });
           if (!result.ok) return failed(result.error);
           return {
             ok: true,

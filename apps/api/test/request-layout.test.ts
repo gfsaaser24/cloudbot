@@ -284,7 +284,6 @@ describe("tools whose precondition is off", () => {
     expect(output).toMatchObject({ found: false, message: expect.stringMatching(/no folder or file is selected/i) });
     expect(get).not.toHaveBeenCalled();
   });
-
 });
 
 describe("prompt caching settings", () => {

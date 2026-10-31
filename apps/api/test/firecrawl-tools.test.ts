@@ -60,7 +60,7 @@ describe("firecrawl tools", () => {
     respond = () => Response.json({ success: true, id: "crawl-1" });
     const crawl = tools().firecrawlCrawl;
 
-    expect(typeof crawl.needsApproval === "function" && (await crawl.needsApproval({ url: "https://a.com", limit: 500 }, options))).toBe(true);
+    expect(crawl.needsApproval).toBe(true);
     const output = await crawl.execute!({ url: "https://a.com", limit: 500 }, options);
 
     expect(calls[0]!.url.pathname).toBe("/v2/crawl");
@@ -126,13 +126,22 @@ describe("firecrawl tools", () => {
     expect(JSON.stringify(output.data).length).toBeLessThanOrEqual(61_000);
   });
 
+  it("keeps a page with very large extracted data within 60,000 characters", async () => {
+    respond = () =>
+      Response.json({ success: true, data: { markdown: "text", json: { rows: "y".repeat(200_000) }, metadata: { title: "Data" } } });
+
+    const output = await tools().firecrawlScrape.execute!({ url: "https://a.com/data", formats: [{ type: "json", prompt: "rows" }] }, options);
+    expect(JSON.stringify(output.data).length).toBeLessThanOrEqual(61_000);
+    expect(Object.keys(output.data as object)).not.toContain("0");
+  });
+
   it("explains that web search is off instead of searching", async () => {
     const off = tools(false);
     const output = await off.firecrawlSearch.execute!({ query: "news", sources: ["web"], limit: 5, scrapeResults: false }, options);
 
     expect(output.summary).toMatch(/web search is turned off/i);
     expect(calls).toHaveLength(0);
-    expect(typeof off.firecrawlCrawl.needsApproval === "function" && (await off.firecrawlCrawl.needsApproval({ url: "https://a.com", limit: 5 }, options))).toBe(false);
+    expect(off.firecrawlCrawl.needsApproval).toBe(false);
   });
 
   it("asks before creating a monitor, but not before listing them", async () => {
