@@ -69,7 +69,7 @@ describe("replaying a saved chat to the model", () => {
     });
   });
 
-  it("keeps the full output of a tool that is no longer offered (extractFromWeb)", async () => {
+  it("keeps the full output of a saved extractFromWeb call", async () => {
     const model = await replay();
     const result = model
       .flatMap((m) => (Array.isArray(m.content) ? m.content : []))
