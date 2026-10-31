@@ -2,7 +2,6 @@ import { type MarkdownDocument } from "@cloudflare/workers-types";
 import { type Chat } from "@workspace/server/drizzle/schema.js";
 import { createLogger } from "@workspace/server/logger/logger.js";
 import {
-  convertToModelMessages,
   consumeStream,
   createUIMessageStream,
   createUIMessageStreamResponse,
@@ -22,8 +21,8 @@ import { type CustomUIMessage } from "../../types/custom-ui-message.js";
 import { saveChat } from "../queries/chats.js";
 import { getLatestDocumentsByIds } from "../queries/documents.js";
 import { saveMessages } from "../queries/messages.js";
+import { toModelHistory } from "./chat-history.js";
 import { type ChatRequest } from "./chat-request.js";
-import { omitDocumentText } from "./omit-document-text.js";
 
 const logger = createLogger("chat-handler");
 
@@ -106,7 +105,7 @@ export abstract class ChatHandler {
     await saveMessages({
       bucket: this.env.CLOUDBOT_BUCKET,
       chatId: this.request.id,
-      newMessages: messages.map(omitDocumentText),
+      newMessages: messages,
     });
   }
 
@@ -223,9 +222,11 @@ export abstract class ChatHandler {
                 ? await file.text()
                 : await this.convertToMarkdown(name, await file.blob());
             lastMessage.parts.push({
-              type: "text",
-              text: `\n\n[Attached file: "${name}"]\n\n${truncateForContext(text)}`,
-            } as any);
+              type: "data-attachmentText",
+              data: {
+                text: `\n\n[Attached file: "${name}"]\n\n${truncateForContext(text)}`,
+              },
+            });
           }
 
           logger.debug("Attached file to message", {
@@ -252,9 +253,11 @@ export abstract class ChatHandler {
       for (const doc of docs) {
         if (doc.content) {
           lastMessage.parts.push({
-            type: "text",
-            text: `\n\n[Referenced Document: "${doc.title}"]\n\n${doc.content}`,
-          } as any);
+            type: "data-attachmentText",
+            data: {
+              text: `\n\n[Referenced Document: "${doc.title}"]\n\n${doc.content}`,
+            },
+          });
 
           logger.debug("Attached document to message", {
             documentId: doc.id,
@@ -274,7 +277,7 @@ export abstract class ChatHandler {
       reasoning: this.request.reasoningEnabled,
       userId: this.request.user.id,
     });
-    let modelMessages = await convertToModelMessages(this.request.messages);
+    const modelMessages = await toModelHistory(this.request.messages);
 
     return {
       instructions: systemPrompt,
@@ -300,9 +303,7 @@ export abstract class ChatHandler {
           });
         }
 
-        if (!this.request.isTemporary) {
-          await this.saveUserMessage();
-        }
+        // executeChat saves the user message once its attachments are added.
         await this.executeChat(writer);
       },
       onError: (error) => this.handleError(error),

@@ -12,6 +12,7 @@ import { type UserLocation } from "../../types/user-location.js";
 import { getReadableFolder } from "../folder-access.js";
 import { getChatById } from "../queries/chats.js";
 import { getMessagesByChatId } from "../queries/messages.js";
+import { mergeIncomingMessages } from "./chat-history.js";
 import { mockedTools } from "../tools/index.js";
 
 const logger = createLogger("chat-request");
@@ -91,7 +92,6 @@ export class ChatRequest {
     const {
       id,
       messages: incomingMessages,
-      messageCount,
       model,
       temporary: isTemporary,
       reasoning: reasoningEnabled,
@@ -146,15 +146,17 @@ export class ChatRequest {
         folderId = folder.id;
       }
 
-      // Load previous messages
+      // The whole conversation: every turn replays all of it.
       prevMessages = await getMessagesByChatId({
         bucket: c.env.CLOUDBOT_BUCKET,
         chatId: id,
-        messageCount: messageCount ? Math.min(messageCount, 12) : 12,
       });
     }
 
-    const messages = [...prevMessages.reverse(), ...incomingMessages];
+    const messages = mergeIncomingMessages(
+      prevMessages,
+      incomingMessages as CustomUIMessage[],
+    );
 
     let validatedUIMessages: CustomUIMessage[];
     try {
@@ -173,20 +175,9 @@ export class ChatRequest {
       throw new HTTPException(400, { message: "BAD_REQUEST" });
     }
 
-    // Disallow file parts in chat messages
-    // File parts should be handled as attachments, not inline in messages
-    // Once the attachments are validated, they will be integrated into the last user message
-    const containsFilePart = validatedUIMessages.some((m) => {
-      return m.parts.some((p) => p.type === "file");
-    });
-
-    if (containsFilePart) {
-      logger.warn("Request contains disallowed file parts in messages", {
-        chatId: id,
-        userId: user.id,
-      });
-      throw new HTTPException(400, { message: "BAD_REQUEST" });
-    }
+    // File parts and attachment text come only from the server: mergeIncomingMessages
+    // strips them from client messages, and attachments are added again from the
+    // message's metadata. Saved ones are the server's own and replay as sent.
 
     return new ChatRequest(
       id,

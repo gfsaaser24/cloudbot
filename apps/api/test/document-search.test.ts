@@ -1,4 +1,3 @@
-import { omitDocumentText } from "@workspace/api-routes/lib/chat/omit-document-text.js";
 import { extractFromDocuments } from "@workspace/api-routes/lib/tools/extract-from-documents.js";
 import { type Bindings } from "@workspace/api-routes/types/bindings.js";
 import { type CustomUIMessage } from "@workspace/api-routes/types/custom-ui-message.js";
@@ -53,27 +52,5 @@ describe("extractFromDocuments", () => {
       ],
       sources: [{ folderId, filename: "episode.md", score: 0.55 }],
     });
-  });
-});
-
-describe("omitDocumentText", () => {
-  it("drops read file text from saved messages but keeps the result", () => {
-    const message = {
-      id: "m1",
-      role: "assistant",
-      parts: [
-        {
-          type: "tool-readFile",
-          toolCallId: "1",
-          state: "output-available",
-          input: { filename: "episode.md" },
-          output: { found: true, filename: "episode.md", folderId, text: "x".repeat(50_000) },
-        },
-      ],
-    } as CustomUIMessage;
-
-    const [part] = omitDocumentText(message).parts;
-    expect(part).toMatchObject({ output: { found: true, filename: "episode.md" } });
-    expect(JSON.stringify(part).length).toBeLessThan(1_000);
   });
 });

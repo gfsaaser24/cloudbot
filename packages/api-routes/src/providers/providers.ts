@@ -86,8 +86,6 @@ async function openRouterModel(
         { id: "file-parser", pdf: { engine: "cloudflare-ai" } },
         ...(webSearch ? [{ id: "web" as const, max_results: 8 }] : []),
       ],
-      // Compress the middle of very long conversations instead of failing.
-      extraBody: { transforms: ["middle-out"] },
     }),
     providerOptions: {},
   };
