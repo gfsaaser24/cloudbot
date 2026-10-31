@@ -41,4 +41,50 @@ describe("model catalog", () => {
       supportedParameters: expect.arrayContaining(["tools", "tool_choice", "max_tokens", "verbosity"]),
     });
   });
+
+  // A fresh module, so no earlier test's cached catalog is served.
+  const freshCatalog = async () => {
+    vi.resetModules();
+    return (await import("@workspace/api-routes/providers/openrouter-catalog.js")).getOpenRouterCatalog();
+  };
+
+  it("reads the next page when a full page has a model it leaves out", async () => {
+    const listed = JSON.parse(catalog) as { data: Record<string, unknown>[] };
+    const luna = listed.data[0]!;
+    const fullPage = [
+      ...Array.from({ length: 499 }, (_, i) => ({ ...luna, id: `copy/model-${i}` })),
+      { ...luna, id: "broken/model", architecture: "not an object" },
+    ];
+    const offsets: (string | null)[] = [];
+    vi.stubGlobal("fetch", async (input: Request | URL | string) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      offsets.push(url.searchParams.get("offset"));
+      return Response.json({ data: url.searchParams.get("offset") === "0" ? fullPage : listed.data });
+    });
+
+    const models = await freshCatalog();
+
+    expect(offsets).toEqual(["0", "500"]);
+    expect(models).toHaveLength(500);
+    expect(models.map((m) => m.id)).not.toContain("broken/model");
+  });
+
+  it("fails instead of listing no models when no entry matches the SDK", async () => {
+    const listed = JSON.parse(catalog) as { data: Record<string, unknown>[] };
+    vi.stubGlobal("fetch", async () =>
+      Response.json({ data: listed.data.map((m) => ({ ...m, architecture: "not an object" })) }),
+    );
+
+    await expect(freshCatalog()).rejects.toThrow();
+  });
+
+  it("leaves out only a model listed in a shape the SDK doesn't expect", async () => {
+    const listed = JSON.parse(catalog) as { data: Record<string, unknown>[] };
+    listed.data.push({ ...listed.data[0], id: "broken/model", architecture: "not an object" });
+    vi.stubGlobal("fetch", async () => Response.json(listed));
+
+    const models = await freshCatalog();
+
+    expect(models.map((m) => m.id)).toEqual(["openai/gpt-6-luna"]);
+  });
 });

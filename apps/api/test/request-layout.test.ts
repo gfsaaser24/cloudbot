@@ -119,6 +119,8 @@ vi.mock("@workspace/server/drizzle/db.js", () => ({
         },
       }),
     }),
+    // A started Firecrawl job is recorded with its user.
+    insert: () => ({ values: async () => undefined }),
   }),
 }));
 
