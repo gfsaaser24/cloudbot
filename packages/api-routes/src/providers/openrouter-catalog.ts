@@ -1,3 +1,7 @@
+import { OpenRouterCore } from "@openrouter/sdk/core.js";
+import { modelsList } from "@openrouter/sdk/funcs/modelsList.js";
+import { type Model } from "@openrouter/sdk/models";
+
 // The chat model menu lists every OpenRouter model that supports tool calling
 // (the chat always sends tools, and the AI SDK sends tool_choice with them).
 // The list comes from OpenRouter's public models endpoint and is cached per
@@ -16,16 +20,6 @@ export interface CatalogModel {
   maxCompletionTokens: number | null;
 }
 
-type OpenRouterModel = {
-  id: string;
-  name: string;
-  description?: string;
-  context_length?: number;
-  architecture?: { input_modalities?: string[] };
-  supported_parameters?: string[];
-  top_provider?: { max_completion_tokens?: number | null };
-};
-
 const CACHE_TTL_MS = 60 * 60 * 1000;
 // Every chat turn waits for the catalog, so a slow models endpoint must not
 // hold it up for long.
@@ -40,39 +34,46 @@ function shortDescription(description = ""): string {
     : firstSentence;
 }
 
+// Every model in OpenRouter's catalog, through its typed client SDK. The
+// models endpoint is public, so no API key is sent.
+async function fetchModels(): Promise<Model[]> {
+  const client = new OpenRouterCore({
+    // Empty, so the SDK doesn't fall back to OPENROUTER_API_KEY.
+    apiKey: "",
+    timeoutMs: FETCH_TIMEOUT_MS,
+    retryConfig: { strategy: "none" },
+  });
+  const models: Model[] = [];
+  for await (const page of await modelsList(client)) {
+    if (!page.ok) throw page.error;
+    models.push(...page.value.result.data);
+  }
+  return models;
+}
+
 export async function getOpenRouterCatalog(): Promise<CatalogModel[]> {
   if (cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS) {
     return cache.models;
   }
 
-  let response: Response;
+  let data: Model[];
   try {
-    response = await fetch("https://openrouter.ai/api/v1/models", {
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
+    data = await fetchModels();
   } catch (error) {
     if (cache) {
       return cache.models; // Serve the stale list rather than failing.
     }
     throw error;
   }
-  if (!response.ok) {
-    if (cache) {
-      return cache.models; // Serve the stale list rather than failing.
-    }
-    throw new Error(`OpenRouter models request failed: ${response.status}`);
-  }
-
-  const { data } = (await response.json()) as { data: OpenRouterModel[] };
 
   const models = data
     .filter(
       (m) =>
-        m.supported_parameters?.includes("tools") &&
-        m.supported_parameters.includes("tool_choice"),
+        m.supportedParameters.includes("tools") &&
+        m.supportedParameters.includes("tool_choice"),
     )
     .map((m) => {
-      const inputs = m.architecture?.input_modalities ?? [];
+      const inputs: string[] = m.architecture.inputModalities;
       return {
         id: m.id,
         label: m.name,
@@ -80,10 +81,10 @@ export async function getOpenRouterCatalog(): Promise<CatalogModel[]> {
         images: inputs.includes("image"),
         // The file-parser plugin (see providers.ts) lets every model read PDFs.
         pdfs: true,
-        reasoning: m.supported_parameters?.includes("reasoning") ?? false,
-        contextLength: m.context_length ?? 0,
-        supportedParameters: m.supported_parameters ?? [],
-        maxCompletionTokens: m.top_provider?.max_completion_tokens ?? null,
+        reasoning: m.supportedParameters.includes("reasoning"),
+        contextLength: m.contextLength ?? 0,
+        supportedParameters: m.supportedParameters,
+        maxCompletionTokens: m.topProvider.maxCompletionTokens ?? null,
       };
     })
     .sort((a, b) => a.label.localeCompare(b.label));
