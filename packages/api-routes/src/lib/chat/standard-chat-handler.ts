@@ -11,7 +11,7 @@ import { inArray } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import { standardSystemPrompt } from "../../providers/prompts.js";
 import { contextOverflowMessage } from "./chat-history.js";
-import { prepareFinalAnswer, stopWhen } from "./stop-conditions.js";
+import { type ToolSpend, turnLimits } from "./stop-conditions.js";
 import { type Bindings } from "../../types/bindings.js";
 import { type TurnContextSection } from "../../schemas/data-schemas.js";
 import { type CustomUIMessage } from "../../types/custom-ui-message.js";
@@ -25,6 +25,7 @@ import {
 } from "../../utils/filter-authorized-folders.js";
 import { generateUUID } from "../../utils/generate-uuid.js";
 import { getPromptsByIds } from "../queries/prompts.js";
+import { analyzeFolder } from "../tools/analyze-folder.js";
 import { createDocument } from "../tools/create-document.js";
 import { extractFromDocuments } from "../tools/extract-from-documents.js";
 import { fetchWebContent } from "../tools/fetch-web-content.js";
@@ -57,6 +58,8 @@ const logger = createLogger("standard-chat-handler");
 export class StandardChatHandler extends ChatHandler {
   private systemPrompt = standardSystemPrompt;
   private project?: Project; // Loaded at the start of executeChat
+  // What tools spend on model calls this turn, toward the cost ceiling.
+  private toolSpend: ToolSpend = { usd: 0 };
 
   constructor(
     env: Bindings,
@@ -308,6 +311,13 @@ export class StandardChatHandler extends ChatHandler {
       fileMetadata: authorizedFileMetadata,
       folderMetadata: authorizedFolderMetadata,
     });
+    tools.analyzeFolder = analyzeFolder({
+      env: this.env,
+      userId: this.request.user.id,
+      fileMetadata: authorizedFileMetadata,
+      folderMetadata: authorizedFolderMetadata,
+      toolSpend: this.toolSpend,
+    });
     // Firecrawl is the web layer; the web search toggle enables it.
     if (isFirecrawlConfigured()) {
       Object.assign(
@@ -358,8 +368,7 @@ export class StandardChatHandler extends ChatHandler {
     const result = streamText({
       ...streamConfig,
       tools,
-      stopWhen,
-      prepareStep: prepareFinalAnswer,
+      ...turnLimits(this.toolSpend),
       onError: ({ error }) => {
         logger.error("Model stream error", error);
       },

@@ -80,7 +80,7 @@ export function buildProjectPrompt(
   }
 
   prompt += searchesProject
-    ? `\nWhen a question may be answered by these files, search them with extractFromDocuments, or read whole files with readFile (for example to compare or summarise many of them).\n`
+    ? `\nWhen a question may be answered by these files, search them with extractFromDocuments, read whole files with readFile, or use analyzeFolder to extract the same details from all of them (for example to count or compare across transcripts).\n`
     : `\nFor this message the user selected other folders or files, so extractFromDocuments searches those instead of the project folder.\n`;
   prompt += `saveToFolder saves into this project folder when you leave out the folder.\n`;
 

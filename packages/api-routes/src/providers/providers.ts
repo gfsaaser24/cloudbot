@@ -111,6 +111,28 @@ function answerSettings(model: CatalogModel | undefined, reasoning: boolean) {
   };
 }
 
+// The cheap model that reads files one at a time for analyzeFolder. The model
+// the user picked still writes the answer.
+export const EXTRACTION_MODEL_ID = "openai/gpt-6-luna";
+
+export async function getExtractionModel(
+  userId: string,
+): Promise<LanguageModel> {
+  const { createOpenRouter } = await import("@openrouter/ai-sdk-provider");
+  const openrouter = createOpenRouter({
+    compatibility: "strict",
+    appName: "CloudChat",
+    appUrl: process.env.BETTER_AUTH_URL,
+  });
+  return openrouter.chat(EXTRACTION_MODEL_ID, {
+    // The cost of each call counts toward the turn's cost ceiling.
+    usage: { include: true },
+    user: userId,
+    // Repairs malformed JSON, so a structured extraction rarely fails.
+    plugins: [{ id: "response-healing" }],
+  });
+}
+
 async function openRouterModel(
   modelId: string,
   { userId, sessionId }: ModelOptions,
