@@ -38,6 +38,8 @@ function shortDescription(description = ""): string {
 // models endpoint is public, so no API key is sent.
 async function fetchModels(): Promise<Model[]> {
   const client = new OpenRouterCore({
+    // Empty, so the SDK doesn't fall back to OPENROUTER_API_KEY.
+    apiKey: "",
     timeoutMs: FETCH_TIMEOUT_MS,
     retryConfig: { strategy: "none" },
   });
